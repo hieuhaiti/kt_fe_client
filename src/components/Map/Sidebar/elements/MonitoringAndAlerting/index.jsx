@@ -1361,12 +1361,21 @@ function FireRiskLayerRow({ row }) {
     >
       <div className="flex items-center gap-1.5">
         <div className={`h-2 w-2 shrink-0 rounded-full ${row.dot}`} />
-        <span
-          className="min-w-0 flex-1 truncate text-[11px] font-medium"
-          title={row.title || row.label}
-        >
-          {row.label}
-        </span>
+        {/* Radix Tooltip — sidebar hẹp thường truncate tên; hover hiện full
+            name + layer FQN (nếu khác label, ví dụ history overlay). */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="min-w-0 flex-1 cursor-help truncate text-[11px] font-medium">
+              {row.label}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-72">
+            <p className="font-semibold">{row.label}</p>
+            {row.title && row.title !== row.label && (
+              <p className="mt-1 font-mono text-[10px] opacity-75">{row.title}</p>
+            )}
+          </TooltipContent>
+        </Tooltip>
         <Button
           type="button"
           variant="ghost"
@@ -1580,25 +1589,27 @@ function FireRiskHistoryBrowser({
                         added
                           ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
                           : isCurrent
-                            ? "border-blue-200 text-blue-400 dark:border-blue-800 dark:text-blue-600"
+                            ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
                             : "border-blue-400 bg-white text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
                       }`}
                       title={
                         isCurrent
-                          ? "Snapshot hiện tại (đã hiển thị mặc định)"
+                          ? "Snapshot hiện tại — đã render mặc định trong 'Bản đồ nhiệt cấp cảnh báo cháy'. Add lại sẽ chồng 2 lớp WMS trùng nhau."
                           : added
                             ? "Đã thêm vào Lớp bản đồ. Gỡ bằng nút × ở trên."
                             : "Thêm overlay vào Lớp bản đồ"
                       }
                     >
-                      {added ? (
-                        "Đã thêm"
-                      ) : (
-                        <>
-                          <Plus className="h-3 w-3" />
-                          Thêm
-                        </>
-                      )}
+                      {isCurrent
+                        ? "Đang hiển thị"
+                        : added
+                          ? "Đã thêm"
+                          : (
+                            <>
+                              <Plus className="h-3 w-3" />
+                              Thêm
+                            </>
+                          )}
                     </Button>
                   </li>
                 );

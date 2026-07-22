@@ -1,0 +1,11 @@
+export const serviceAuthPath = "/auth";
+export const serviceNewsPath = "/news";
+export const serviceNewsCommentPath = "/news";
+export const serviceFeedbackPath = "/feedback";
+export const serviceSatellitePath = "/satellite";
+export const serviceFireRiskPath = "/fire-risk";
+export const serviceForestClassificationPath = "/forest-classification";
+export const serviceMapLayerPath = "/map/layers";
+export const serviceSearchPath = "/search";
+export const serviceDocumentPath = "/documents";
+export const serviceNotificationPath = "/notifications";

@@ -1,17 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "react-toastify";
 import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Download,
+  Eye,
+  EyeOff,
+  GitCompareArrows,
+  Layers,
   Loader2,
   RefreshCw,
   TreePine,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -22,9 +30,17 @@ import {
 import { formatDateTime } from "@/lib/utils";
 import {
   getForestClassificationLatest,
+  getForestClassificationPublishedHistory,
   getForestClassificationSnapshot,
   queryForestClassification,
 } from "@/features/map/api/forestClassificationApi";
+import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
+import { buildWcsCoverageUrl } from "@/helper/Map/geoserver/wcs";
+import { downloadRasterFile } from "@/lib/downloadRaster";
+import { useMapStore } from "@/stores/Map/useMapStore";
+
+const FOREST_HISTORY_SOURCE_PREFIX = "forest-class-history-source-";
+const FOREST_HISTORY_LAYER_PREFIX = "forest-class-history-layer-";
 
 // 11-class palette (mirrors server config)
 const CLASS_PALETTE = [
@@ -75,8 +91,20 @@ const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => currentYear - i);
 
 function formatArea(ha) {
   if (ha == null) return "—";
-  if (ha >= 10000) return `${(ha / 10000).toFixed(1)} vạn ha`;
+  if (Math.abs(ha) >= 10000) return `${(ha / 10000).toFixed(1)} vạn ha`;
   return `${ha.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} ha`;
+}
+
+function formatAreaChange(metric) {
+  if (!metric) return "—";
+  const deltaHa = Number(metric.deltaHa) || 0;
+  const changePct = metric.changePct;
+  const sign = deltaHa > 0 ? "+" : "";
+  const pct =
+    changePct == null
+      ? ""
+      : ` (${Number(changePct) > 0 ? "+" : ""}${Number(changePct).toFixed(1)}%)`;
+  return `${sign}${formatArea(deltaHa)}${pct}`;
 }
 
 function StatusBadge({ status }) {
@@ -110,25 +138,246 @@ function ClassRow({ classId, name, areaHa, totalHa }) {
   );
 }
 
+function ComparisonCard({ comparison }) {
+  const previous = comparison?.previousSnapshot;
+  const province = comparison?.province;
+  if (!previous || !province) return null;
+
+  const previousPeriod = `${String(previous.month).padStart(2, "0")}/${previous.year}`;
+  const topChanges = [...(province.classes || [])]
+    .filter((item) => Number(item.deltaHa) !== 0)
+    .sort((a, b) => Math.abs(Number(b.deltaHa)) - Math.abs(Number(a.deltaHa)))
+    .slice(0, 3);
+
+  return (
+    <Card className="gap-0 overflow-hidden py-0">
+      <CardHeader className="border-b border-border bg-muted/30 px-4 py-3">
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <GitCompareArrows className="h-4 w-4 shrink-0 text-primary" />
+            <span className="truncate">So sánh kỳ gần nhất</span>
+          </span>
+          <Badge variant="outline" className="shrink-0 font-mono text-[10px]">
+            {previousPeriod}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 px-4 py-3">
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <p className="text-muted-foreground">Tổng diện tích</p>
+            <p className="mt-0.5 font-semibold tabular-nums text-foreground">
+              {formatAreaChange(province.total)}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Diện tích rừng</p>
+            <p className="mt-0.5 font-semibold tabular-nums text-green-600">
+              {formatAreaChange(province.forest)}
+            </p>
+          </div>
+        </div>
+        {topChanges.length > 0 && (
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
+              Lớp biến động nhiều nhất
+            </p>
+            <div className="divide-y divide-border">
+              {topChanges.map((item) => (
+                <div key={item.classId} className="flex items-center gap-2 py-1.5 text-xs">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-sm border border-border"
+                    style={{ backgroundColor: CLASS_PALETTE[item.classId] }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-foreground">
+                    {item.className || CLASS_NAMES[item.classId]}
+                  </span>
+                  <span className="shrink-0 font-medium tabular-nums text-foreground">
+                    {formatAreaChange(item)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function normalizeProvinceSummary(summary) {
+  if (!summary) return [];
+
+  if (Array.isArray(summary)) {
+    return summary.map((item) => ({
+      ...item,
+      class_id: Number(item.class_id ?? item.classId),
+      area_ha: Number(item.area_ha ?? item.areaHa) || 0,
+    }));
+  }
+
+  const byClass = summary?.byClass ?? summary?.by_class ?? {};
+  return CLASS_NAMES.map((name, classId) => ({
+    class_id: classId,
+    class_name: name,
+    area_ha: Number(byClass[String(classId)] ?? byClass[classId]) || 0,
+  }));
+}
+
+function toPublishedMapLayer(item) {
+  const id = item?.id != null ? String(item.id) : "";
+  const geoserverLayer = item?.geoserverLayer ?? item?.geoserver_layer ?? "";
+  const year = Number(item?.year);
+  const month = Number(item?.month);
+  if (!id || !geoserverLayer) return null;
+
+  const tileUrl = buildWmsTileUrl({ geoserver_layer: geoserverLayer });
+  if (!tileUrl) return null;
+
+  // Ưu tiên link tải WCS GeoServer (persistent, full-res). Server đã build sẵn
+  // ở `/latest` + `/snapshot/:id` (formatSnapshot). Với item từ
+  // `/published-history` (chỉ có `geoserver_layer`), fallback tự build client-
+  // side. Cuối cùng fallback về `geeDownloadUrl` (GEE, TTL ~24h).
+  const [workspacePart, layerPart] = geoserverLayer.includes(":")
+    ? geoserverLayer.split(":")
+    : [null, geoserverLayer];
+  const wcsCoverageId = workspacePart
+    ? `${workspacePart}__${layerPart}`
+    : undefined;
+  const clientBuiltWcs = buildWcsCoverageUrl(
+    { geoserver_layer: geoserverLayer },
+    wcsCoverageId ? { coverageId: wcsCoverageId } : {},
+  );
+  const geoserverDownloadUrl =
+    item?.geoserverDownloadUrl ??
+    item?.geoserver_download_url ??
+    clientBuiltWcs ??
+    null;
+  const geeDownloadUrl = item?.geeDownloadUrl ?? item?.gee_download_url ?? null;
+  const downloadUrl = geoserverDownloadUrl || geeDownloadUrl || null;
+  const downloadSource = geoserverDownloadUrl
+    ? "geoserver"
+    : geeDownloadUrl
+      ? "gee"
+      : null;
+  const downloadFilename =
+    item?.downloadFilename ??
+    (Number.isFinite(year) && Number.isFinite(month)
+      ? `forest_class_kontum_${year}${String(month).padStart(2, "0")}.tif`
+      : `forest_class_${id}.tif`);
+
+  return {
+    id,
+    geoserverLayer,
+    tileUrl,
+    label:
+      Number.isFinite(year) && Number.isFinite(month)
+        ? `Phân loại rừng ${String(month).padStart(2, "0")}/${year}`
+        : `Phân loại rừng #${id}`,
+    visible: true,
+    opacity: 0.75,
+    downloadUrl,
+    downloadSource,
+    downloadFilename,
+  };
+}
+
+function ensureForestRasterLayer(map, item) {
+  const sourceId = `${FOREST_HISTORY_SOURCE_PREFIX}${item.id}`;
+  const layerId = `${FOREST_HISTORY_LAYER_PREFIX}${item.id}`;
+
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
+      type: "raster",
+      tiles: [item.tileUrl],
+      tileSize: 256,
+      attribution: "GeoServer WMS — Phân loại lớp phủ rừng",
+    });
+  }
+  if (!map.getLayer(layerId)) {
+    map.addLayer({
+      id: layerId,
+      type: "raster",
+      source: sourceId,
+      paint: { "raster-opacity": item.opacity },
+      layout: { visibility: item.visible ? "visible" : "none" },
+    });
+  } else {
+    map.setPaintProperty(layerId, "raster-opacity", item.opacity);
+    map.setLayoutProperty(
+      layerId,
+      "visibility",
+      item.visible ? "visible" : "none",
+    );
+  }
+}
+
+function removeForestRasterLayer(map, id) {
+  const sourceId = `${FOREST_HISTORY_SOURCE_PREFIX}${id}`;
+  const layerId = `${FOREST_HISTORY_LAYER_PREFIX}${id}`;
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+}
+
+function getForestRasterIds(map) {
+  return (map.getStyle?.()?.layers || [])
+    .map((layer) => layer.id)
+    .filter((id) => id.startsWith(FOREST_HISTORY_LAYER_PREFIX))
+    .map((id) => id.slice(FOREST_HISTORY_LAYER_PREFIX.length));
+}
+
 export function ForestClassification() {
+  const mapInstance = useMapStore((state) => state.mapInstance);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [querying, setQuerying] = useState(false);
   const [error, setError] = useState(null);
+  const [publishedHistory, setPublishedHistory] = useState([]);
+  const [selectedPublishedId, setSelectedPublishedId] = useState("");
+  const [mapLayers, setMapLayers] = useState({});
 
   const [year, setYear] = useState(String(currentYear));
   const [month, setMonth] = useState(String(new Date().getMonth() + 1));
+  const [downloadingLayerId, setDownloadingLayerId] = useState(null);
 
   const pollRef = useRef(null);
 
-  const stopPoll = () => {
+  const handleDownloadLayer = useCallback(async (layer) => {
+    if (!layer?.downloadUrl) return;
+    setDownloadingLayerId(layer.id);
+    try {
+      await downloadRasterFile(layer.downloadUrl, layer.downloadFilename);
+      toast.success(
+        layer.downloadSource === "geoserver"
+          ? "Đã tải GeoTIFF từ GeoServer."
+          : "Đã tải GeoTIFF từ Earth Engine.",
+      );
+    } catch (err) {
+      toast.error(err?.message || "Không thể tải GeoTIFF.");
+    } finally {
+      setDownloadingLayerId(null);
+    }
+  }, []);
+
+  const activatePublishedLayer = useCallback((item) => {
+    const layer = toPublishedMapLayer(item);
+    if (!layer) return;
+    setMapLayers((current) => ({
+      ...current,
+      [layer.id]: current[layer.id]
+        ? { ...layer, ...current[layer.id] }
+        : layer,
+    }));
+  }, []);
+
+  const stopPoll = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-  };
+  }, []);
 
-  const startPoll = (snapshotId) => {
+  const startPoll = useCallback((snapshotId) => {
     stopPoll();
     pollRef.current = setInterval(async () => {
       try {
@@ -142,9 +391,9 @@ export function ForestClassification() {
         stopPoll();
       }
     }, 10000);
-  };
+  }, [stopPoll]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     stopPoll();
@@ -152,6 +401,7 @@ export function ForestClassification() {
       const res = await getForestClassificationLatest();
       const payload = res?.data ?? res;
       setData(payload);
+      activatePublishedLayer(payload?.snapshot);
       if (payload?.computing && payload?.snapshot?.id) {
         startPoll(payload.snapshot.id);
       }
@@ -160,16 +410,32 @@ export function ForestClassification() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activatePublishedLayer, startPoll, stopPoll]);
+
+  const loadPublishedHistory = useCallback(async () => {
+    try {
+      const res = await getForestClassificationPublishedHistory(1, 24);
+      const items = res?.data?.data?.items ?? res?.data?.items ?? [];
+      setPublishedHistory(
+        Array.isArray(items)
+          ? items.filter((item) => toPublishedMapLayer(item))
+          : [],
+      );
+    } catch {
+      setPublishedHistory([]);
+    }
+  }, []);
 
   useEffect(() => {
     load();
+    loadPublishedHistory();
     return stopPoll;
-  }, []);
+  }, [load, loadPublishedHistory, stopPoll]);
 
   const handleQuery = async () => {
     if (!year || !month) return;
     setQuerying(true);
+    setSelectedPublishedId("");
     setError(null);
     stopPoll();
     try {
@@ -186,8 +452,33 @@ export function ForestClassification() {
     }
   };
 
+  const handlePublishedSnapshot = async (snapshotId) => {
+    setSelectedPublishedId(snapshotId);
+    setQuerying(true);
+    setError(null);
+    stopPoll();
+    try {
+      const res = await getForestClassificationSnapshot(snapshotId);
+      const payload = res?.data ?? res;
+      setData(payload);
+      activatePublishedLayer(
+        payload?.snapshot ||
+          publishedHistory.find((item) => String(item.id) === snapshotId),
+      );
+      if (payload?.snapshot) {
+        setYear(String(payload.snapshot.year));
+        setMonth(String(payload.snapshot.month));
+      }
+    } catch (err) {
+      setError(err?.message || "Không thể tải phiên bản đã xuất bản.");
+    } finally {
+      setQuerying(false);
+    }
+  };
+
   const snapshot = data?.snapshot;
-  const provinceSummary = snapshot?.provinceSummary ?? [];
+  const comparison = data?.comparison ?? null;
+  const provinceSummary = normalizeProvinceSummary(snapshot?.provinceSummary);
   const totalHa = provinceSummary.reduce((s, c) => s + (c.area_ha ?? 0), 0);
   const totalForestHa = provinceSummary
     .filter((c) => FOREST_CLASS_IDS.includes(c.class_id))
@@ -195,6 +486,39 @@ export function ForestClassification() {
 
   const isComputing = data?.computing;
   const isStale = data?.stale;
+
+  useEffect(() => {
+    if (!mapInstance) return;
+
+    const syncLayers = () => {
+      for (const layer of Object.values(mapLayers)) {
+        ensureForestRasterLayer(mapInstance, layer);
+      }
+
+      const activeIds = new Set(Object.keys(mapLayers));
+      for (const id of getForestRasterIds(mapInstance)) {
+        if (!activeIds.has(id)) removeForestRasterLayer(mapInstance, id);
+      }
+    };
+
+    if (mapInstance.isStyleLoaded?.()) syncLayers();
+    else mapInstance.once("load", syncLayers);
+    mapInstance.on("style.load", syncLayers);
+
+    return () => {
+      mapInstance.off("load", syncLayers);
+      mapInstance.off("style.load", syncLayers);
+    };
+  }, [mapInstance, mapLayers]);
+
+  useEffect(() => {
+    return () => {
+      if (!mapInstance) return;
+      for (const id of getForestRasterIds(mapInstance)) {
+        removeForestRasterLayer(mapInstance, id);
+      }
+    };
+  }, [mapInstance]);
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
@@ -271,6 +595,150 @@ export function ForestClassification() {
         </Button>
       </div>
 
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground">
+          Lịch sử đã publish, chọn để thêm lớp GeoServer
+        </label>
+        <Select
+          value={selectedPublishedId}
+          onValueChange={handlePublishedSnapshot}
+          disabled={querying || publishedHistory.length === 0}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue
+              placeholder={
+                publishedHistory.length > 0
+                  ? "Chọn phiên bản GeoServer"
+                  : "Chưa có phiên bản đã publish"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {publishedHistory.map((item) => (
+              <SelectItem key={item.id} value={String(item.id)}>
+                Tháng {item.month}/{item.year} · {formatDateTime(item.published_at)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {Object.keys(mapLayers).length > 0 && (
+        <div className="overflow-hidden rounded-md border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <Layers className="h-3.5 w-3.5 text-primary" />
+              Lớp phân loại trên bản đồ
+            </span>
+            <Badge variant="outline">{Object.keys(mapLayers).length}</Badge>
+          </div>
+          <div className="max-h-48 divide-y divide-border overflow-y-auto">
+            {Object.values(mapLayers).map((layer) => (
+              <div key={layer.id} className="space-y-2 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-sm border border-border"
+                    style={{ backgroundColor: CLASS_PALETTE[4] }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-foreground">
+                      {layer.label}
+                    </p>
+                    <p className="truncate font-mono text-[10px] text-muted-foreground">
+                      {layer.geoserverLayer}
+                    </p>
+                  </div>
+                  {layer.downloadUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => handleDownloadLayer(layer)}
+                      disabled={downloadingLayerId === layer.id}
+                      title={
+                        layer.downloadSource === "geoserver"
+                          ? `Tải GeoTIFF từ GeoServer (${layer.downloadFilename})`
+                          : `Tải GeoTIFF từ Earth Engine — TTL ~24h (${layer.downloadFilename})`
+                      }
+                      aria-label="Tải GeoTIFF"
+                    >
+                      {downloadingLayerId === layer.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download
+                          className={`h-3.5 w-3.5 ${
+                            layer.downloadSource === "geoserver"
+                              ? "text-primary"
+                              : "text-amber-600"
+                          }`}
+                        />
+                      )}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant={layer.visible ? "soft-primary" : "outline"}
+                    size="icon-xs"
+                    onClick={() =>
+                      setMapLayers((current) => ({
+                        ...current,
+                        [layer.id]: {
+                          ...current[layer.id],
+                          visible: !current[layer.id].visible,
+                        },
+                      }))
+                    }
+                    title={layer.visible ? "Ẩn lớp" : "Hiện lớp"}
+                  >
+                    {layer.visible ? (
+                      <Eye className="h-3.5 w-3.5" />
+                    ) : (
+                      <EyeOff className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() =>
+                      setMapLayers((current) => {
+                        const next = { ...current };
+                        delete next[layer.id];
+                        return next;
+                      })
+                    }
+                    title="Gỡ lớp khỏi bản đồ"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Slider
+                    value={[Math.round(layer.opacity * 100)]}
+                    min={0}
+                    max={100}
+                    step={5}
+                    onValueChange={([value]) =>
+                      setMapLayers((current) => ({
+                        ...current,
+                        [layer.id]: {
+                          ...current[layer.id],
+                          opacity: value / 100,
+                        },
+                      }))
+                    }
+                    aria-label={`Độ trong suốt ${layer.label}`}
+                  />
+                  <span className="w-8 text-right text-[10px] tabular-nums text-muted-foreground">
+                    {Math.round(layer.opacity * 100)}%
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Error */}
       {error && (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -342,6 +810,8 @@ export function ForestClassification() {
           </CardContent>
         </Card>
       )}
+
+      {comparison && <ComparisonCard comparison={comparison} />}
 
       {/* Legend + area table */}
       {provinceSummary.length > 0 && (

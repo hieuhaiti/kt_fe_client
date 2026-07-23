@@ -66,14 +66,6 @@ export function importMapLayerFile(formData) {
   return mutater(`${LAYERS_PATH}/import-file`, "POST", formData);
 }
 
-export function importMapLayerGeoJson(layerCode, payload) {
-  return mutater(
-    `${LAYERS_PATH}/${encodeURIComponent(layerCode)}/import`,
-    "POST",
-    payload,
-  );
-}
-
 export function getMapLayerImportJobs(layerCode) {
   return fetcher(`${LAYERS_PATH}/${encodeURIComponent(layerCode)}/import-jobs`);
 }

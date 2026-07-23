@@ -925,18 +925,19 @@ export function MonitoringAndAlerting() {
           {mechExpanded && (
             <ul className="list-disc space-y-1 border-t border-blue-200 px-3 pt-2 pb-3 pl-7 dark:border-blue-900">
               <li>
-                <b>Mô hình</b>: Random Forest 100 trees, train trên MCD64A1 +
-                FireCCI51 + FIRMS (20 tháng mùa khô 2019-2023).
+                <b>Mô hình</b>: Random Forest.
               </li>
               <li>
-                <b>Cấp cảnh báo (C1-C5)</b>: blend NDVI + NDMI + NBR + LST +
-                ERA5 + slope + fuel + Nesterov P. Không phải phân cấp thuần
-                Nesterov theo QĐ 25/2022.
+                <b>Tập dữ liệu đào tạo</b>: MCD64A1 + FireCCI51 + FIRMS (20
+                tháng mùa khô 2019-2023).
               </li>
               <li>
-                <b>Nguồn ảnh</b>: Sentinel-2 30 ngày (cửa sổ backup 180 ngày nếu
-                S2 &lt; 60% phủ), MODIS LST, ERA5-Land. Ảnh mới → cấp cảnh báo
-                mới.
+                <b>Cấp cảnh báo (C1-C5)</b>:NDVI + NDMI + NBR + LST + ERA5 +
+                slope + fuel + Nesterov P. Không phải phân cấp thuần Nesterov
+                theo QĐ 25/2022.
+              </li>
+              <li>
+                <b>Nguồn ảnh</b>: Sentinel-2 cửa sổ trượt, MODIS LST, ERA5-Land.
               </li>
             </ul>
           )}
@@ -1336,7 +1337,8 @@ function FireRiskLayerManager({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-55">
-            Đặt lại visibility + opacity mặc định và gỡ hết overlay history đã thêm.
+            Đặt lại visibility + opacity mặc định và gỡ hết overlay history đã
+            thêm.
           </TooltipContent>
         </Tooltip>
       </div>
@@ -1372,7 +1374,9 @@ function FireRiskLayerRow({ row }) {
           <TooltipContent side="top" className="max-w-72">
             <p className="font-semibold">{row.label}</p>
             {row.title && row.title !== row.label && (
-              <p className="mt-1 font-mono text-[10px] opacity-75">{row.title}</p>
+              <p className="mt-1 font-mono text-[10px] opacity-75">
+                {row.title}
+              </p>
             )}
           </TooltipContent>
         </Tooltip>
@@ -1600,16 +1604,16 @@ function FireRiskHistoryBrowser({
                             : "Thêm overlay vào Lớp bản đồ"
                       }
                     >
-                      {isCurrent
-                        ? "Đang hiển thị"
-                        : added
-                          ? "Đã thêm"
-                          : (
-                            <>
-                              <Plus className="h-3 w-3" />
-                              Thêm
-                            </>
-                          )}
+                      {isCurrent ? (
+                        "Đang hiển thị"
+                      ) : added ? (
+                        "Đã thêm"
+                      ) : (
+                        <>
+                          <Plus className="h-3 w-3" />
+                          Thêm
+                        </>
+                      )}
                     </Button>
                   </li>
                 );

@@ -25,8 +25,6 @@ export const trackMapping = [
     id: "forestClassification",
     icon: TreePine,
     label: "Phân loại rừng",
-    description:
-      "Phân loại 11 lớp phủ rừng theo tháng từ dữ liệu vệ tinh Landsat/Sentinel-2",
     component: ForestClassification,
     color: "text-green-600",
   },

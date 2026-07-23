@@ -67,6 +67,25 @@ const buildDownloadFilename = (
   const safeSuffix = suffix ? `_${slugify(suffix)}` : "";
   return `${label}${datePart ? `_${datePart}` : ""}${safeSuffix}.${extension}`;
 };
+
+const detectRasterExtension = async (blob) => {
+  const bytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  const isLittleEndianTiff =
+    bytes[0] === 0x49 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x2a &&
+    bytes[3] === 0x00;
+  const isBigEndianTiff =
+    bytes[0] === 0x4d &&
+    bytes[1] === 0x4d &&
+    bytes[2] === 0x00 &&
+    bytes[3] === 0x2a;
+
+  if (isZip) return "zip";
+  if (isLittleEndianTiff || isBigEndianTiff) return "tif";
+  throw new Error("Server không trả về tệp GeoTIFF hoặc ZIP hợp lệ.");
+};
 /**
  * Shared satellite layer control card.
  *
@@ -153,6 +172,7 @@ function LayerControl({
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadType, setDownloadType] = useState("raster");
+  const [downloadError, setDownloadError] = useState("");
   const [statsOpen, setStatsOpen] = useState(false);
   const rasterUrl = layer?.downloadUrls?.raster || layer?.downloadUrl || null;
   const hasRasterDownload = !!rasterUrl;
@@ -279,7 +299,10 @@ function LayerControl({
             {/* Download confirmation dialog */}
             <Dialog
               open={downloadDialogOpen}
-              onOpenChange={setDownloadDialogOpen}
+              onOpenChange={(open) => {
+                setDownloadDialogOpen(open);
+                if (open) setDownloadError("");
+              }}
             >
               <DialogContent className="sm:max-w-md" showCloseButton={false}>
                 <DialogHeader>
@@ -294,9 +317,14 @@ function LayerControl({
                   <DialogDescription className="text-sm text-foreground/70">
                     {downloadType === "vector"
                       ? "Lưu ý: File vector sẽ được cắt theo vùng nghiên cứu — buffer 20km quanh biên giới."
-                      : "Lưu ý: Ảnh sau khi tải sẽ được cắt theo vùng nghiên cứu — buffer 20km quanh biên giới."}
+                      : "Ảnh raster tải về bao phủ toàn tỉnh Kon Tum và sử dụng độ phân giải được cấu hình trên server. GeoTIFF là định dạng GIS chuyên dụng; hãy mở bằng QGIS hoặc ArcGIS thay vì trình duyệt."}
                   </DialogDescription>
                 </DialogHeader>
+                {downloadError && (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {downloadError}
+                  </p>
+                )}
                 <DialogFooter className="sm:justify-end gap-2">
                   <Button
                     variant="outline"
@@ -312,19 +340,28 @@ function LayerControl({
                     }
                     disabled={isDownloading}
                     onClick={async () => {
+                      let downloaded = false;
                       try {
                         setIsDownloading(true);
+                        setDownloadError("");
                         if (downloadType === "vector") {
                           throw new Error("Vector download is unavailable");
                         }
 
+                        const res = await fetch(rasterUrl);
+                        if (!res.ok) {
+                          throw new Error(`Server trả lỗi HTTP ${res.status}.`);
+                        }
+                        const blob = await res.blob();
+                        if (!blob.size) {
+                          throw new Error("Tệp tải về rỗng.");
+                        }
+                        const extension = await detectRasterExtension(blob);
                         const rasterFilename = buildDownloadFilename(
                           layer,
                           config,
-                          "tif",
+                          extension,
                         );
-                        const res = await fetch(rasterUrl);
-                        const blob = await res.blob();
                         const blobUrl = URL.createObjectURL(blob);
                         const a = document.createElement("a");
                         a.href = blobUrl;
@@ -333,14 +370,14 @@ function LayerControl({
                         a.click();
                         document.body.removeChild(a);
                         URL.revokeObjectURL(blobUrl);
+                        downloaded = true;
                       } catch (err) {
-                        console.error("Download failed:", err);
-                        if (downloadType === "raster" && rasterUrl) {
-                          window.open(rasterUrl, "_blank");
-                        }
+                        setDownloadError(
+                          err?.message || "Không thể tải ảnh raster. Vui lòng thử lại.",
+                        );
                       } finally {
                         setIsDownloading(false);
-                        setDownloadDialogOpen(false);
+                        if (downloaded) setDownloadDialogOpen(false);
                       }
                     }}
                   >

@@ -106,7 +106,7 @@ export const useSatelliteStore = create(
       startDate: subtractOneMonth(),
       endDate: new Date(),
       selectedLayer: "ndvi",
-      cloudCover: 20,
+      cloudCover: 70,
       analysisData: null,
 
       setStartDate: (date) => set({ startDate: date }),
@@ -656,7 +656,7 @@ export const useSatelliteStore = create(
             new Date().getMonth() + 1,
             0,
           ),
-          cloudCover: 20,
+          cloudCover: 70,
           activeLayerTypes: new Set(["rgb"]),
           period1Data: { rgb: null, ndvi: null, swir: null, classified: null },
           period2Data: { rgb: null, ndvi: null, swir: null, classified: null },
@@ -700,7 +700,7 @@ export const useSatelliteStore = create(
           startDate: subtractOneMonth(),
           endDate: new Date(),
           selectedLayer: "ndvi",
-          cloudCover: 20,
+          cloudCover: 70,
           analysisData: null,
           // Compare mode
           isCompareMode: false,

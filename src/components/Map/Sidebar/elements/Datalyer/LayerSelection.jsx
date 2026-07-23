@@ -72,6 +72,7 @@ export function LayerSelection() {
     {
       page: 1,
       limit: 100,
+      layer_kind: "basemap",
     },
     { staleTime: 2 * 60 * 1000 },
   );

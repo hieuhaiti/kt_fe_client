@@ -20,13 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -70,7 +63,6 @@ const FIRE_DIST_LINE = "fire-risk-district-line";
 const FIRE_RASTER_LAYER = "fire-risk-raster";
 const HISTORY_SRC_PREFIX = "fire-risk-hist-src-";
 const HISTORY_LAYER_PREFIX = "fire-risk-hist-lyr-";
-const ALL_VALUE = "all";
 
 const RISK_LEVELS = {
   1: { label: "Cấp I — Thấp", color: "#00a65a", badge: "soft-success" },
@@ -404,11 +396,7 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
     s2CoverageRatio:
       summary?.s2CoverageRatio ?? summary?.s2_coverage_ratio ?? null,
     districts,
-    geoserverLayer:
-      snap?.geoserverLayer ??
-      mapPayload?.geoserverLayer ??
-      latestPayload?.geoserverLayer ??
-      null,
+    geoserverLayer: snap?.geoserverLayer ?? null,
     // Fallback raster URL từ Earth Engine — server luôn cố sinh field này
     // (getEeMapId), KHÔNG cần GCS. TTL ~24h nên nếu snapshot cũ hơn 24h URL
     // có thể expired → 404. Client vẫn thử, thất bại thì maplibre log warning
@@ -416,7 +404,6 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
     geeTileUrl:
       snap?.geeTileUrl ??
       snap?.gee_tile_url ??
-      latestPayload?.geeTileUrl ??
       null,
     // GeoTIFF download URL. Ưu tiên `geoserverDownloadUrl` (WCS, persistent,
     // full-res) → fallback `geeDownloadUrl` (GEE trần, TTL 24h). Server thêm
@@ -429,11 +416,7 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
       null,
     // Filename gợi ý từ server (`fire_risk_kontum_YYYYMMDD.tif`). Client dùng
     // cho `<a download>` — GEE mặc định trả `<hash>:getPixels.tiff`.
-    geeDownloadFilename:
-      snap?.downloadFilename ??
-      snap?.geeDownloadFilename ??
-      snap?.gee_download_filename ??
-      null,
+    geeDownloadFilename: snap?.downloadFilename ?? null,
     stale: Boolean(latestPayload?.stale),
     computing: Boolean(latestPayload?.computing),
   };
@@ -475,7 +458,7 @@ function ensureRasterLayer(map, tileUrl) {
       type: "raster",
       tiles: [tileUrl],
       tileSize: 256,
-      attribution: "GeoServer WMS — Fire Risk",
+      attribution: "Dữ liệu cảnh báo cháy rừng",
     });
   }
   if (!map.getLayer(FIRE_RASTER_LAYER)) {
@@ -552,7 +535,7 @@ function ensureHistoryRasterLayer(map, id, tileUrl, opacity, visible) {
       type: "raster",
       tiles: [tileUrl],
       tileSize: 256,
-      attribution: "GeoServer WMS — Fire Risk (history)",
+      attribution: "Dữ liệu lịch sử cảnh báo cháy rừng",
     });
   }
   if (!map.getLayer(lyrId)) {
@@ -579,36 +562,6 @@ function removeHistoryRasterLayer(map, id) {
   const lyrId = `${HISTORY_LAYER_PREFIX}${id}`;
   if (map.getLayer(lyrId)) map.removeLayer(lyrId);
   if (map.getSource(srcId)) map.removeSource(srcId);
-}
-
-/**
- * Bounding box (WGS84) của toàn FeatureCollection để fitBounds.
- */
-function getFeatureCollectionBbox(fc) {
-  if (!fc?.features?.length) return null;
-  let minX = Infinity,
-    minY = Infinity;
-  let maxX = -Infinity,
-    maxY = -Infinity;
-  const walk = (arr) => {
-    if (typeof arr[0] === "number") {
-      const [x, y] = arr;
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-      return;
-    }
-    for (const inner of arr) walk(inner);
-  };
-  for (const f of fc.features) {
-    if (Array.isArray(f?.geometry?.coordinates)) walk(f.geometry.coordinates);
-  }
-  if (!Number.isFinite(minX)) return null;
-  return [
-    [minX, minY],
-    [maxX, maxY],
-  ];
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -641,7 +594,6 @@ export function MonitoringAndAlerting() {
   const [rasterTileUrl, setRasterTileUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedLevel, setSelectedLevel] = useState(ALL_VALUE);
 
   // ── History overlays — layer WMS các snapshot cũ đã publish ──────────────
   // `historyItems`: list [{id, analysisDate, geoserverLayer, tileUrl}] filtered
@@ -730,13 +682,6 @@ export function MonitoringAndAlerting() {
     }
     return out;
   }, [view]);
-
-  // Filter theo cấp — hiển thị breakdown lọc bớt. Vì chỉ có 1 tỉnh nên không
-  // có "danh sách bị ẩn". Chỉ tô đậm/highlight cấp được chọn.
-  const filteredLevels = useMemo(() => {
-    if (selectedLevel === ALL_VALUE) return levelsWithArea;
-    return levelsWithArea.filter((l) => String(l.level) === selectedLevel);
-  }, [levelsWithArea, selectedLevel]);
 
   // Layer toggle: 2 layer riêng biệt user có thể bật/tắt & chỉnh opacity.
   //   - "district": vector polygon huyện tô màu theo maxLevel (TB toàn tỉnh).
@@ -851,22 +796,6 @@ export function MonitoringAndAlerting() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleFocusMap = () => {
-    if (!mapInstance) return;
-    const bbox = getFeatureCollectionBbox(view?.districtFeatureCollection);
-    if (bbox) {
-      mapInstance.fitBounds(bbox, { padding: 40, duration: 800, maxZoom: 11 });
-      return;
-    }
-    const c = view?.centroid;
-    if (!c || Math.abs(c.lat) > 90 || Math.abs(c.lng) > 180) return;
-    mapInstance.flyTo({
-      center: [c.lng, c.lat],
-      zoom: Math.max(mapInstance.getZoom(), 9),
-      essential: true,
-    });
-  };
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const [mechExpanded, setMechExpanded] = useState(false);
@@ -932,7 +861,7 @@ export function MonitoringAndAlerting() {
                 tháng mùa khô 2019-2023).
               </li>
               <li>
-                <b>Cấp cảnh báo (C1-C5)</b>:NDVI + NDMI + NBR + LST + ERA5 +
+                <b>Cấp cảnh báo (C1-C5)</b>: NDVI + NDMI + NBR + LST + ERA5 +
                 slope + fuel + Nesterov P. Không phải phân cấp thuần Nesterov
                 theo QĐ 25/2022.
               </li>
@@ -977,7 +906,7 @@ export function MonitoringAndAlerting() {
               <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
                 {view.computing
                   ? "Đang tính toán lại — đang hiển thị bản gần nhất."
-                  : "Dữ liệu có thể đã cũ (stale)."}
+                  : "Dữ liệu có thể đã cũ."}
               </p>
             )}
 
@@ -998,7 +927,7 @@ export function MonitoringAndAlerting() {
                       ? `C${view.maxLevel}`
                       : "—"
                 }
-                hint={view.maxLevel > 0 ? `Max C${view.maxLevel}` : null}
+                hint={view.maxLevel > 0 ? `Cao nhất C${view.maxLevel}` : null}
               />
               <KpiCard
                 labelNode={
@@ -1048,17 +977,10 @@ export function MonitoringAndAlerting() {
                     <div className="flex flex-wrap gap-1.5">
                       {levelsWithArea.map((l) => {
                         const meta = getRiskMeta(l.level);
-                        const isFocused =
-                          selectedLevel !== ALL_VALUE &&
-                          String(l.level) === selectedLevel;
                         return (
                           <span
                             key={l.level}
-                            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] tabular-nums transition-opacity ${
-                              selectedLevel !== ALL_VALUE && !isFocused
-                                ? "opacity-40"
-                                : "opacity-100"
-                            }`}
+                            className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] tabular-nums"
                             style={{
                               borderColor: meta.color,
                               color: meta.color,
@@ -1225,7 +1147,7 @@ export function MonitoringAndAlerting() {
               <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
                 <ThermometerSun className="h-3 w-3 shrink-0" />
                 <span>
-                  Cấp 0 (không hiển thị): thiếu quan sát S2/LST 30 ngày.
+                  Khu vực không hiển thị: chưa đủ dữ liệu ảnh trong 30 ngày.
                 </span>
               </div>
             </div>
@@ -1309,7 +1231,6 @@ function FireRiskLayerManager({
     downloadFilename: null,
     removable: true,
     onRemove: () => onHistoryRemove?.(h.id),
-    title: h.geoserverLayer,
   }));
 
   const rows = [...baseRows, ...historyLayerRows];
@@ -1337,8 +1258,7 @@ function FireRiskLayerManager({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-55">
-            Đặt lại visibility + opacity mặc định và gỡ hết overlay history đã
-            thêm.
+            Khôi phục hiển thị mặc định và gỡ các lớp lịch sử.
           </TooltipContent>
         </Tooltip>
       </div>
@@ -1363,8 +1283,7 @@ function FireRiskLayerRow({ row }) {
     >
       <div className="flex items-center gap-1.5">
         <div className={`h-2 w-2 shrink-0 rounded-full ${row.dot}`} />
-        {/* Radix Tooltip — sidebar hẹp thường truncate tên; hover hiện full
-            name + layer FQN (nếu khác label, ví dụ history overlay). */}
+        {/* Sidebar hẹp thường truncate tên; hover hiện đầy đủ nhãn lớp. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="min-w-0 flex-1 cursor-help truncate text-[11px] font-medium">
@@ -1373,11 +1292,6 @@ function FireRiskLayerRow({ row }) {
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-72">
             <p className="font-semibold">{row.label}</p>
-            {row.title && row.title !== row.label && (
-              <p className="mt-1 font-mono text-[10px] opacity-75">
-                {row.title}
-              </p>
-            )}
           </TooltipContent>
         </Tooltip>
         <Button
@@ -1418,7 +1332,7 @@ function FireRiskLayerRow({ row }) {
                 window.open(row.rasterUrl, "_blank", "noopener");
               }
             }}
-            title={`Tải GeoTIFF màu (${row.downloadFilename || "TTL 24h"})`}
+            title="Tải dữ liệu bản đồ nguy cơ cháy"
           >
             <Image className="h-3.5 w-3.5 text-primary" />
           </Button>
@@ -1430,7 +1344,7 @@ function FireRiskLayerRow({ row }) {
             size="icon-xs"
             onClick={row.onRemove}
             className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-            title="Gỡ overlay này khỏi bản đồ"
+            title="Gỡ lớp này khỏi bản đồ"
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -1516,8 +1430,7 @@ function FireRiskHistoryBrowser({
 
       {isEmpty && (
         <div className="border-t border-blue-200 px-3 py-2 text-[10px] text-blue-700 dark:border-blue-900 dark:text-blue-300">
-          Chưa có snapshot nào đã publish GeoServer. Chạy phân tích + publish từ
-          admin để add layer cũ vào bản đồ.
+          Chưa có dữ liệu lịch sử sẵn sàng để hiển thị.
         </div>
       )}
 
@@ -1531,7 +1444,7 @@ function FireRiskHistoryBrowser({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Tìm theo ngày hoặc tên layer..."
+                placeholder="Tìm theo ngày..."
                 className="w-full rounded border border-blue-300 bg-white py-1 pr-6 pl-6 text-[11px] text-blue-900 outline-none placeholder:text-blue-400 focus:border-blue-500 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-100 dark:placeholder:text-blue-600"
               />
               {query && (
@@ -1558,7 +1471,7 @@ function FireRiskHistoryBrowser({
           <ul className="max-h-56 divide-y divide-blue-200 overflow-y-auto border-t border-blue-200 dark:divide-blue-900 dark:border-blue-900">
             {filtered.length === 0 ? (
               <li className="px-3 py-3 text-center text-[11px] text-blue-700 dark:text-blue-300">
-                Không có snapshot khớp "{query}"
+                Không có kỳ dữ liệu khớp "{query}"
               </li>
             ) : (
               filtered.map((it) => {
@@ -1598,10 +1511,10 @@ function FireRiskHistoryBrowser({
                       }`}
                       title={
                         isCurrent
-                          ? "Snapshot hiện tại — đã render mặc định trong 'Bản đồ nhiệt cấp cảnh báo cháy'. Add lại sẽ chồng 2 lớp WMS trùng nhau."
+                          ? "Kỳ hiện tại đang được hiển thị."
                           : added
-                            ? "Đã thêm vào Lớp bản đồ. Gỡ bằng nút × ở trên."
-                            : "Thêm overlay vào Lớp bản đồ"
+                            ? "Đã thêm vào lớp bản đồ."
+                            : "Thêm kỳ này vào bản đồ"
                       }
                     >
                       {isCurrent ? (

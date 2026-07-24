@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
   BarChart3,
-  CalendarDays,
   CheckCircle2,
   Clock3,
   Download,
   Eye,
   EyeOff,
   GitCompareArrows,
+  Info,
   Layers,
   Loader2,
   RefreshCw,
@@ -32,7 +32,6 @@ import {
   getForestClassificationLatest,
   getForestClassificationPublishedHistory,
   getForestClassificationSnapshot,
-  queryForestClassification,
 } from "@/features/map/api/forestClassificationApi";
 import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 import { buildWcsCoverageUrl } from "@/helper/Map/geoserver/wcs";
@@ -86,9 +85,6 @@ const MONTHS = [
   "Tháng 12",
 ];
 
-const currentYear = new Date().getFullYear();
-const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => currentYear - i);
-
 function formatArea(ha) {
   if (ha == null) return "—";
   if (Math.abs(ha) >= 10000) return `${(ha / 10000).toFixed(1)} vạn ha`;
@@ -120,7 +116,7 @@ function ClassRow({ classId, name, areaHa, totalHa }) {
   const isForest = FOREST_CLASS_IDS.includes(classId);
   const pct = totalHa > 0 ? ((areaHa / totalHa) * 100).toFixed(1) : 0;
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="grid grid-cols-[0.75rem_minmax(0,1fr)_2.5rem_5rem] items-center gap-2 py-1 text-xs">
       <span
         className="h-3 w-3 shrink-0 rounded-sm border border-border/40"
         style={{ backgroundColor: CLASS_PALETTE[classId] ?? "#ccc" }}
@@ -130,8 +126,10 @@ function ClassRow({ classId, name, areaHa, totalHa }) {
       >
         {name}
       </span>
-      <span className="shrink-0 text-muted-foreground">{pct}%</span>
-      <span className="w-20 shrink-0 text-right font-medium text-foreground">
+      <span className="text-right tabular-nums text-muted-foreground">
+        {pct}%
+      </span>
+      <span className="text-right font-medium tabular-nums text-foreground">
         {formatArea(areaHa)}
       </span>
     </div>
@@ -184,7 +182,10 @@ function ComparisonCard({ comparison }) {
             </p>
             <div className="divide-y divide-border">
               {topChanges.map((item) => (
-                <div key={item.classId} className="flex items-center gap-2 py-1.5 text-xs">
+                <div
+                  key={item.classId}
+                  className="grid grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-2 py-1.5 text-xs"
+                >
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-sm border border-border"
                     style={{ backgroundColor: CLASS_PALETTE[item.classId] }}
@@ -291,7 +292,7 @@ function ensureForestRasterLayer(map, item) {
       type: "raster",
       tiles: [item.tileUrl],
       tileSize: 256,
-      attribution: "GeoServer WMS — Phân loại lớp phủ rừng",
+      attribution: "Dữ liệu phân loại lớp phủ rừng",
     });
   }
   if (!map.getLayer(layerId)) {
@@ -335,10 +336,8 @@ export function ForestClassification() {
   const [publishedHistory, setPublishedHistory] = useState([]);
   const [selectedPublishedId, setSelectedPublishedId] = useState("");
   const [mapLayers, setMapLayers] = useState({});
-
-  const [year, setYear] = useState(String(currentYear));
-  const [month, setMonth] = useState(String(new Date().getMonth() + 1));
   const [downloadingLayerId, setDownloadingLayerId] = useState(null);
+  const [infoExpanded, setInfoExpanded] = useState(false);
 
   const pollRef = useRef(null);
 
@@ -347,13 +346,9 @@ export function ForestClassification() {
     setDownloadingLayerId(layer.id);
     try {
       await downloadRasterFile(layer.downloadUrl, layer.downloadFilename);
-      toast.success(
-        layer.downloadSource === "geoserver"
-          ? "Đã tải GeoTIFF từ GeoServer."
-          : "Đã tải GeoTIFF từ Earth Engine.",
-      );
+      toast.success("Đã tải dữ liệu phân loại.");
     } catch (err) {
-      toast.error(err?.message || "Không thể tải GeoTIFF.");
+      toast.error(err?.message || "Không thể tải dữ liệu phân loại.");
     } finally {
       setDownloadingLayerId(null);
     }
@@ -432,26 +427,6 @@ export function ForestClassification() {
     return stopPoll;
   }, [load, loadPublishedHistory, stopPoll]);
 
-  const handleQuery = async () => {
-    if (!year || !month) return;
-    setQuerying(true);
-    setSelectedPublishedId("");
-    setError(null);
-    stopPoll();
-    try {
-      const res = await queryForestClassification(Number(year), Number(month));
-      const payload = res?.data ?? res;
-      setData(payload);
-      if (payload?.computing && payload?.snapshot?.id) {
-        startPoll(payload.snapshot.id);
-      }
-    } catch (err) {
-      setError(err?.message || "Không thể truy vấn dữ liệu.");
-    } finally {
-      setQuerying(false);
-    }
-  };
-
   const handlePublishedSnapshot = async (snapshotId) => {
     setSelectedPublishedId(snapshotId);
     setQuerying(true);
@@ -465,10 +440,6 @@ export function ForestClassification() {
         payload?.snapshot ||
           publishedHistory.find((item) => String(item.id) === snapshotId),
       );
-      if (payload?.snapshot) {
-        setYear(String(payload.snapshot.year));
-        setMonth(String(payload.snapshot.month));
-      }
     } catch (err) {
       setError(err?.message || "Không thể tải phiên bản đã xuất bản.");
     } finally {
@@ -483,6 +454,7 @@ export function ForestClassification() {
   const totalForestHa = provinceSummary
     .filter((c) => FOREST_CLASS_IDS.includes(c.class_id))
     .reduce((s, c) => s + (c.area_ha ?? 0), 0);
+  const forestPct = totalHa > 0 ? (totalForestHa / totalHa) * 100 : 0;
 
   const isComputing = data?.computing;
   const isStale = data?.stale;
@@ -521,102 +493,95 @@ export function ForestClassification() {
   }, [mapInstance]);
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
-      {/* Header */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <TreePine className="h-5 w-5 text-green-600" />
-          <h2 className="text-lg font-semibold text-foreground">
-            Phân loại rừng
-          </h2>
+    <div className="@container/forest flex h-full min-h-0 min-w-0 flex-col gap-3 px-1 pb-3">
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <TreePine className="h-5 w-5 shrink-0 text-success" />
+            <h2 className="truncate text-base font-semibold text-foreground @[360px]/forest:text-lg">
+              Phân loại rừng
+            </h2>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              load();
+              loadPublishedHistory();
+            }}
+            disabled={loading || querying}
+            title="Cập nhật dữ liệu"
+            aria-label="Cập nhật dữ liệu phân loại rừng"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+            />
+          </Button>
         </div>
-        <p className="text-xs leading-5 text-muted-foreground">
-          Phân loại 11 lớp phủ rừng hàng tháng từ Landsat/Sentinel-2 sử dụng
-          Random Forest (GEE).
-        </p>
+        {snapshot?.computedAt && (
+          <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground @[360px]/forest:text-xs">
+            <Clock3 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              Ngày phân tích: {formatDateTime(snapshot.computedAt)}
+            </span>
+          </p>
+        )}
       </div>
 
-      {/* Period selector */}
-      <div className="flex items-end gap-2">
-        <div className="flex-1 space-y-1">
-          <label className="text-xs text-muted-foreground">Năm</label>
-          <Select value={year} onValueChange={setYear} disabled={querying}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {YEAR_OPTIONS.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex-1 space-y-1">
-          <label className="text-xs text-muted-foreground">Tháng</label>
-          <Select value={month} onValueChange={setMonth} disabled={querying}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MONTHS.map((label, i) => (
-                <SelectItem key={i + 1} value={String(i + 1)}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="rounded-lg border border-info/30 bg-info/10 text-[11px] leading-5 text-info-foreground">
         <Button
-          size="sm"
-          variant="gradient-primary"
-          onClick={handleQuery}
-          disabled={querying || loading}
-          className="h-8 px-3"
+          type="button"
+          variant="ghost"
+          onClick={() => setInfoExpanded((current) => !current)}
+          aria-expanded={infoExpanded}
+          className="flex h-auto w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold text-info-foreground hover:bg-info/10"
         >
-          {querying ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <CalendarDays className="h-3.5 w-3.5" />
-          )}
+          <span className="flex items-center gap-1.5">
+            <Info className="h-3.5 w-3.5" />
+            Thông tin dữ liệu
+          </span>
+          <span className="text-[10px] font-normal">
+            {infoExpanded ? "Ẩn" : "Xem"}
+          </span>
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={load}
-          disabled={loading || querying}
-          className="h-8 px-3"
-          title="Tải mới nhất"
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-          />
-        </Button>
+        {infoExpanded && (
+          <ul className="list-disc space-y-1 border-t border-info/20 px-3 pt-2 pb-3 pl-7">
+            <li>
+              <b>Mô hình</b>: Random Forest.
+            </li>
+            <li>
+              <b>Nguồn ảnh</b>: Landsat 5/7/8/9 và Sentinel-2.
+            </li>
+            <li>
+              <b>Kết quả</b>: 11 nhóm lớp phủ, tổng hợp theo tháng.
+            </li>
+          </ul>
+        )}
       </div>
 
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground">
-          Lịch sử đã publish, chọn để thêm lớp GeoServer
+          Kỳ dữ liệu
         </label>
         <Select
           value={selectedPublishedId}
           onValueChange={handlePublishedSnapshot}
           disabled={querying || publishedHistory.length === 0}
         >
-          <SelectTrigger className="h-8 text-xs">
+          <SelectTrigger className="h-8 w-full min-w-0 text-xs">
             <SelectValue
               placeholder={
                 publishedHistory.length > 0
-                  ? "Chọn phiên bản GeoServer"
-                  : "Chưa có phiên bản đã publish"
+                  ? "Chọn tháng cần xem"
+                  : "Chưa có dữ liệu lịch sử"
               }
             />
           </SelectTrigger>
           <SelectContent>
             {publishedHistory.map((item) => (
               <SelectItem key={item.id} value={String(item.id)}>
-                Tháng {item.month}/{item.year} · {formatDateTime(item.published_at)}
+                Tháng {String(item.month).padStart(2, "0")}/{item.year}
               </SelectItem>
             ))}
           </SelectContent>
@@ -624,18 +589,18 @@ export function ForestClassification() {
       </div>
 
       {Object.keys(mapLayers).length > 0 && (
-        <div className="overflow-hidden rounded-md border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-xs">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/20 px-3 py-2">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <Layers className="h-3.5 w-3.5 text-primary" />
               Lớp phân loại trên bản đồ
             </span>
             <Badge variant="outline">{Object.keys(mapLayers).length}</Badge>
           </div>
-          <div className="max-h-48 divide-y divide-border overflow-y-auto">
+          <div className="max-h-[min(12rem,32vh)] divide-y divide-border overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
             {Object.values(mapLayers).map((layer) => (
               <div key={layer.id} className="space-y-2 px-3 py-2">
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-[0.75rem_minmax(0,1fr)_auto] items-center gap-2">
                   <span
                     className="h-3 w-3 shrink-0 rounded-sm border border-border"
                     style={{ backgroundColor: CLASS_PALETTE[4] }}
@@ -644,73 +609,75 @@ export function ForestClassification() {
                     <p className="truncate text-xs font-medium text-foreground">
                       {layer.label}
                     </p>
-                    <p className="truncate font-mono text-[10px] text-muted-foreground">
-                      {layer.geoserverLayer}
-                    </p>
+                      <p className="truncate text-[10px] text-muted-foreground">
+                        Dữ liệu tháng {layer.label.match(/\d{2}\/\d{4}/)?.[0] ?? ""}
+                      </p>
                   </div>
-                  {layer.downloadUrl && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {layer.downloadUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => handleDownloadLayer(layer)}
+                        disabled={downloadingLayerId === layer.id}
+                        title={
+                          layer.downloadSource === "geoserver"
+                            ? "Tải dữ liệu phân loại"
+                            : "Tải dữ liệu phân loại"
+                        }
+                        aria-label="Tải dữ liệu phân loại"
+                      >
+                        {downloadingLayerId === layer.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Download
+                            className={`h-3.5 w-3.5 ${
+                              layer.downloadSource === "geoserver"
+                                ? "text-primary"
+                                : "text-amber-600"
+                            }`}
+                          />
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant={layer.visible ? "soft-primary" : "outline"}
+                      size="icon-xs"
+                      onClick={() =>
+                        setMapLayers((current) => ({
+                          ...current,
+                          [layer.id]: {
+                            ...current[layer.id],
+                            visible: !current[layer.id].visible,
+                          },
+                        }))
+                      }
+                      title={layer.visible ? "Ẩn lớp" : "Hiện lớp"}
+                    >
+                      {layer.visible ? (
+                        <Eye className="h-3.5 w-3.5" />
+                      ) : (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      onClick={() => handleDownloadLayer(layer)}
-                      disabled={downloadingLayerId === layer.id}
-                      title={
-                        layer.downloadSource === "geoserver"
-                          ? `Tải GeoTIFF từ GeoServer (${layer.downloadFilename})`
-                          : `Tải GeoTIFF từ Earth Engine — TTL ~24h (${layer.downloadFilename})`
+                      onClick={() =>
+                        setMapLayers((current) => {
+                          const next = { ...current };
+                          delete next[layer.id];
+                          return next;
+                        })
                       }
-                      aria-label="Tải GeoTIFF"
+                      title="Gỡ lớp khỏi bản đồ"
                     >
-                      {downloadingLayerId === layer.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Download
-                          className={`h-3.5 w-3.5 ${
-                            layer.downloadSource === "geoserver"
-                              ? "text-primary"
-                              : "text-amber-600"
-                          }`}
-                        />
-                      )}
+                      <X className="h-3.5 w-3.5" />
                     </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant={layer.visible ? "soft-primary" : "outline"}
-                    size="icon-xs"
-                    onClick={() =>
-                      setMapLayers((current) => ({
-                        ...current,
-                        [layer.id]: {
-                          ...current[layer.id],
-                          visible: !current[layer.id].visible,
-                        },
-                      }))
-                    }
-                    title={layer.visible ? "Ẩn lớp" : "Hiện lớp"}
-                  >
-                    {layer.visible ? (
-                      <Eye className="h-3.5 w-3.5" />
-                    ) : (
-                      <EyeOff className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() =>
-                      setMapLayers((current) => {
-                        const next = { ...current };
-                        delete next[layer.id];
-                        return next;
-                      })
-                    }
-                    title="Gỡ lớp khỏi bản đồ"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Slider
@@ -776,8 +743,8 @@ export function ForestClassification() {
       {snapshot && (
         <Card className="gap-3 py-3">
           <CardHeader className="px-4">
-            <CardTitle className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5">
+            <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-sm">
+              <span className="flex min-w-0 items-center gap-1.5 truncate">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                 {MONTHS[(snapshot.month ?? 1) - 1]} {snapshot.year}
               </span>
@@ -788,25 +755,17 @@ export function ForestClassification() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border border-border bg-card p-2">
                 <p className="text-muted-foreground">Tổng diện tích rừng</p>
-                <p className="mt-0.5 font-semibold text-green-600">
+                <p className="mt-0.5 font-semibold text-success">
                   {formatArea(totalForestHa)}
                 </p>
               </div>
               <div className="rounded-lg border border-border bg-card p-2">
-                <p className="text-muted-foreground">Độ chính xác OOB</p>
+                <p className="text-muted-foreground">Tỷ lệ diện tích rừng</p>
                 <p className="mt-0.5 font-semibold text-foreground">
-                  {snapshot.oobAccuracy != null
-                    ? `${(snapshot.oobAccuracy * 100).toFixed(1)}%`
-                    : "—"}
+                  {totalHa > 0 ? `${forestPct.toFixed(1)}%` : "—"}
                 </p>
               </div>
             </div>
-            {snapshot.computedAt && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Clock3 className="h-3.5 w-3.5" />
-                Phân tích: {formatDateTime(snapshot.computedAt)}
-              </p>
-            )}
           </CardContent>
         </Card>
       )}
@@ -822,14 +781,14 @@ export function ForestClassification() {
               Phân bố diện tích
             </h3>
           </div>
-          <ScrollArea className="flex-1 rounded-xl border border-border bg-card/40">
-            <div className="space-y-2 p-3">
+          <ScrollArea className="h-[min(18rem,42vh)] min-h-40 rounded-lg border border-border bg-card/40 shadow-xs">
+            <div className="space-y-1.5 p-3 pr-5">
               {/* Header row */}
-              <div className="flex items-center gap-2 border-b border-border pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="sticky top-0 z-10 grid grid-cols-[0.75rem_minmax(0,1fr)_2.5rem_5rem] items-center gap-2 border-b border-border bg-card/95 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
                 <span className="h-3 w-3 shrink-0" />
-                <span className="flex-1">Lớp phủ</span>
-                <span className="shrink-0">%</span>
-                <span className="w-20 shrink-0 text-right">Diện tích</span>
+                <span className="truncate">Lớp phủ</span>
+                <span className="text-right">%</span>
+                <span className="text-right">Diện tích</span>
               </div>
               {provinceSummary
                 .slice()
@@ -847,11 +806,11 @@ export function ForestClassification() {
                     totalHa={totalHa}
                   />
                 ))}
-              <div className="mt-2 flex items-center gap-2 border-t border-border pt-2 text-xs font-semibold text-foreground">
+              <div className="mt-2 grid grid-cols-[0.75rem_minmax(0,1fr)_2.5rem_5rem] items-center gap-2 border-t border-border pt-2 text-xs font-semibold text-foreground">
                 <span className="h-3 w-3 shrink-0" />
-                <span className="flex-1">Tổng cộng</span>
-                <span className="shrink-0">100%</span>
-                <span className="w-20 shrink-0 text-right">
+                <span className="truncate">Tổng cộng</span>
+                <span className="text-right tabular-nums">100%</span>
+                <span className="text-right tabular-nums">
                   {formatArea(totalHa)}
                 </span>
               </div>
@@ -866,7 +825,7 @@ export function ForestClassification() {
           <TreePine className="h-10 w-10 opacity-30" />
           <p className="text-sm">Chưa có dữ liệu phân loại</p>
           <p className="text-xs">
-            Chọn năm/tháng và nhấn nút lịch để truy vấn.
+            Chọn kỳ dữ liệu ở phía trên để xem lại bản đồ.
           </p>
         </div>
       )}

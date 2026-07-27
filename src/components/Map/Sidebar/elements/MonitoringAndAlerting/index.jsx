@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Clock3,
@@ -31,6 +31,7 @@ import {
   getFireRiskLatest,
   getFireRiskMap,
   getFireRiskHistory,
+  getFireRiskDistrictExports,
 } from "@/features/map/api/fireRiskApi";
 import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 
@@ -43,7 +44,7 @@ import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 //   - snapshot.districtStats[] { name, unitCode, s2Coverage, riskLevelDist{1..5} }
 //   - snapshot.geoserverLayer (string|null) — layer name để build WMS tile,
 //     null khi raster chưa publish xong.
-//   - features[]: geometry null hiện tại (polygon huyện được vẽ từ WMS raster).
+//   - features[]: geometry có thể rỗng; UI chỉ bật lớp ranh giới khi có tọa độ.
 //
 // UI:
 //   - WMS tile GeoServer làm nền (khi geoserverLayer sẵn sàng)
@@ -63,6 +64,10 @@ const FIRE_DIST_LINE = "fire-risk-district-line";
 const FIRE_RASTER_LAYER = "fire-risk-raster";
 const HISTORY_SRC_PREFIX = "fire-risk-hist-src-";
 const HISTORY_LAYER_PREFIX = "fire-risk-hist-lyr-";
+const FIRE_REQUEST_TIMEOUT_MS = 12000;
+const FIRE_POLL_INTERVAL_MS = 10000;
+const FIRE_POLL_MAX_ATTEMPTS = 6;
+const GEE_TEMPORARY_TILE_MAX_AGE_MS = 4 * 60 * 60 * 1000;
 
 const RISK_LEVELS = {
   1: { label: "Cấp I — Thấp", color: "#00a65a", badge: "soft-success" },
@@ -185,8 +190,26 @@ function centroidToWgs84(c) {
  * Reproject toàn bộ coordinates của Polygon/MultiPolygon từ UTM 48N → WGS84.
  * Trả về geometry mới hoặc null nếu rỗng / không hợp lệ.
  */
+function hasFiniteCoordinatePair(value) {
+  if (!Array.isArray(value)) return false;
+  if (
+    value.length >= 2 &&
+    Number.isFinite(Number(value[0])) &&
+    Number.isFinite(Number(value[1]))
+  ) {
+    return true;
+  }
+  return value.some(hasFiniteCoordinatePair);
+}
+
 function geometryToWgs84(geometry) {
-  if (!geometry?.type || !Array.isArray(geometry.coordinates)) return null;
+  if (
+    !geometry?.type ||
+    !Array.isArray(geometry.coordinates) ||
+    !hasFiniteCoordinatePair(geometry.coordinates)
+  ) {
+    return null;
+  }
   const crsName = geometry?.crs?.properties?.name || "";
   const forceUtm = crsName.includes("32648");
 
@@ -231,6 +254,236 @@ const fmtNum = (n, digits = 1) =>
 
 const fmtPct = (n) => (Number.isFinite(n) ? Math.round(n * 100) + "%" : "—");
 
+function formatFireAnalysisDate(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value).slice(0, 10);
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Ho_Chi_Minh",
+  }).format(parsed);
+}
+
+function getFireGeoServerLayers(source) {
+  const direct =
+    source?.geoserverLayers ??
+    source?.geoserver_layers ??
+    source?.districtGeoserverLayers ??
+    source?.district_geoserver_layers;
+  const districts = Array.isArray(source?.districts) ? source.districts : [];
+
+  return [
+    ...(Array.isArray(direct) ? direct : []),
+    ...districts.map(
+      (district) => district?.geoserverLayer ?? district?.geoserver_layer ?? "",
+    ),
+  ].reduce((layers, value) => {
+    const layer = String(value || "").trim();
+    if (
+      layer &&
+      /^[a-z0-9][a-z0-9_.-]*(?::[a-z0-9][a-z0-9_.-]*)?$/i.test(layer) &&
+      !layers.includes(layer)
+    ) {
+      layers.push(layer);
+    }
+    return layers;
+  }, []);
+}
+
+function firstFiniteCount(values, { positive = false } = {}) {
+  for (const value of values) {
+    if (value == null) continue;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && (positive ? parsed > 0 : parsed >= 0)) {
+      return Math.trunc(parsed);
+    }
+  }
+  return null;
+}
+
+function firstBoolean(values) {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+    if (value === "true" || value === 1 || value === "1") return true;
+    if (value === "false" || value === 0 || value === "0") return false;
+  }
+  return null;
+}
+
+function isValidHttpTileTemplate(value) {
+  if (!value || typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value.replace(/\{[^}]+\}/g, "0"));
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function getUsableTemporaryTileTemplate(value, generatedAt) {
+  if (!isValidHttpTileTemplate(value)) return null;
+  if (generatedAt) {
+    const generatedMs = Date.parse(generatedAt);
+    if (
+      Number.isFinite(generatedMs) &&
+      Date.now() - generatedMs >= GEE_TEMPORARY_TILE_MAX_AGE_MS
+    ) {
+      return null;
+    }
+  }
+  return value;
+}
+
+function getFireDistrictTiles(source) {
+  const districts = Array.isArray(source?.districts) ? source.districts : [];
+  return districts
+    .map((district) => {
+      const rawUrl =
+        district?.tileUrl ??
+        district?.tile_url ??
+        district?.geeTileUrl ??
+        district?.gee_tile_url ??
+        null;
+      const generatedAt =
+        district?.tileGeneratedAt ??
+        district?.tile_generated_at ??
+        district?.geeGeneratedAt ??
+        district?.gee_generated_at ??
+        null;
+      return {
+        url: getUsableTemporaryTileTemplate(rawUrl, generatedAt),
+        generatedAt,
+      };
+    })
+    .filter((tile) => tile.url);
+}
+
+function toStableFireDistrictRaster(source, fallback) {
+  const layers = [
+    ...new Set([
+      ...getFireGeoServerLayers(fallback),
+      ...getFireGeoServerLayers(source),
+    ]),
+  ];
+  const districts = Array.isArray(source?.districts) ? source.districts : [];
+  const districtTiles = getFireDistrictTiles(source);
+  const expectedTotal = firstFiniteCount(
+    [
+      source?.expectedTotal,
+      source?.expected_total,
+      source?.totalDistricts,
+      source?.total_districts,
+      fallback?.expectedTotal,
+      fallback?.expected_total,
+      fallback?.totalDistricts,
+      fallback?.total_districts,
+    ],
+    { positive: true },
+  );
+  const observedTotal = firstFiniteCount([
+    source?.total,
+    source?.observedTotal,
+    source?.observed_total,
+    districts.length || null,
+    fallback?.total,
+    fallback?.observedTotal,
+    fallback?.observed_total,
+    expectedTotal,
+    layers.length,
+  ]);
+  const districtCodeCount = firstFiniteCount([
+    source?.districtCodeCount,
+    source?.district_code_count,
+    fallback?.districtCodeCount,
+    fallback?.district_code_count,
+    districts.length || null,
+    observedTotal,
+  ]);
+  const reportedReady = firstFiniteCount([
+    source?.readyCount,
+    source?.ready_count,
+    source?.districtLayerCount,
+    source?.district_layer_count,
+    fallback?.readyCount,
+    fallback?.ready_count,
+    fallback?.districtLayerCount,
+    fallback?.district_layer_count,
+    layers.length,
+  ]);
+  const total =
+    expectedTotal ?? observedTotal ?? districtCodeCount ?? layers.length;
+  const ready = Math.min(layers.length, reportedReady ?? layers.length);
+  const explicitFullyPublished = firstBoolean([
+    source?.fullyPublished,
+    source?.fully_published,
+    fallback?.fullyPublished,
+    fallback?.fully_published,
+  ]);
+  const countsComplete =
+    total > 0 &&
+    layers.length === total &&
+    ready === total &&
+    (observedTotal == null || observedTotal === total) &&
+    (districtCodeCount == null || districtCodeCount === total);
+  const fullyPublished =
+    explicitFullyPublished == null
+      ? countsComplete
+      : explicitFullyPublished && countsComplete;
+
+  let tileUrl = null;
+  if (fullyPublished) {
+    try {
+      const candidate = buildWmsTileUrl({
+        geoserver_layer: layers.join(","),
+      });
+      if (isValidHttpTileTemplate(candidate)) tileUrl = candidate;
+    } catch {
+      tileUrl = null;
+    }
+  }
+
+  return {
+    layers,
+    ready,
+    total,
+    expectedTotal,
+    observedTotal,
+    districtCodeCount,
+    fullyPublished,
+    districtTiles,
+    hasDistrictScope:
+      districts.length > 0 ||
+      districtTiles.length > 0 ||
+      layers.length > 0 ||
+      total > 0,
+    scaleM: Number(source?.scaleM ?? source?.scale_m) || null,
+    stable: Boolean(fullyPublished && tileUrl),
+    tileUrl,
+  };
+}
+
+function normalizePublishedFireItem(item) {
+  const id = item?.id != null ? String(item.id) : "";
+  const analysisDate = item?.analysisDate ?? item?.analysis_date ?? null;
+  if (!id || !analysisDate) return null;
+
+  const raster = toStableFireDistrictRaster(item);
+  if (!raster.stable) return null;
+
+  return {
+    ...item,
+    id,
+    analysisDate,
+    geoserverLayers: raster.layers,
+    geoserverLayerCount: raster.ready,
+    totalDistricts: raster.total,
+    tileUrl: raster.tileUrl,
+  };
+}
+
 // ── Response normalisation ─────────────────────────────────────────────────
 
 /**
@@ -256,14 +509,15 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
   const latestFeatures = Array.isArray(latestPayload?.features)
     ? latestPayload.features
     : [];
+  const spatialFeatures = mapFeatures.length ? mapFeatures : latestFeatures;
 
   // Breakdown ha theo cấp: ưu tiên summary; fallback ghép từ features[].
   let riskLevelDist =
     summary?.riskLevelDist ?? summary?.risk_level_dist ?? null;
   if (!riskLevelDist || Object.values(riskLevelDist).every((v) => !v)) {
     const acc = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    for (const f of mapFeatures.length ? mapFeatures : latestFeatures) {
-      const p = f.properties ?? f;
+    for (const f of spatialFeatures) {
+      const p = { ...f, ...(f.properties ?? {}) };
       const lvl = Number(p.riskLevel ?? p.risk_level);
       const ha = Number(p.areaHa ?? p.area_ha);
       if (lvl >= 1 && lvl <= 5 && Number.isFinite(ha)) acc[lvl] += ha;
@@ -283,8 +537,8 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
   // Server trả 1 feature / (huyện × cấp). Ta gộp về 1 feature / huyện, giữ
   // geometry chung + maxLevel để tô màu theo huyện.
   const districtGeomByCode = new Map();
-  for (const f of mapFeatures) {
-    const p = f.properties ?? {};
+  for (const f of spatialFeatures) {
+    const p = { ...f, ...(f.properties ?? {}) };
     const code = String(p.districtCode ?? p.district_code ?? "");
     if (!code) continue;
     const lvl = Number(p.riskLevel ?? p.risk_level) || 0;
@@ -396,15 +650,14 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
     s2CoverageRatio:
       summary?.s2CoverageRatio ?? summary?.s2_coverage_ratio ?? null,
     districts,
+    hasDistrictScope: districts.length > 0 || districtGeomByCode.size > 0,
     geoserverLayer: snap?.geoserverLayer ?? null,
-    // Fallback raster URL từ Earth Engine — server luôn cố sinh field này
-    // (getEeMapId), KHÔNG cần GCS. TTL ~24h nên nếu snapshot cũ hơn 24h URL
-    // có thể expired → 404. Client vẫn thử, thất bại thì maplibre log warning
-    // không crash.
-    geeTileUrl:
-      snap?.geeTileUrl ??
-      snap?.gee_tile_url ??
-      null,
+    // Ảnh xem nhanh cấp tỉnh chỉ dùng cho snapshot legacy không có dữ liệu
+    // huyện. Khi đã có scope huyện, client chờ đúng bộ raster huyện để tránh
+    // phủ nhầm toàn tỉnh.
+    geeTileUrl: snap?.geeTileUrl ?? snap?.gee_tile_url ?? null,
+    geeTileGeneratedAt:
+      snap?.geeTileGeneratedAt ?? snap?.gee_tile_generated_at ?? null,
     // GeoTIFF download URL. Ưu tiên `geoserverDownloadUrl` (WCS, persistent,
     // full-res) → fallback `geeDownloadUrl` (GEE trần, TTL 24h). Server thêm
     // field `geoserverDownloadUrl` khi snapshot đã publish GeoServer.
@@ -592,85 +845,335 @@ export function MonitoringAndAlerting() {
 
   const [view, setView] = useState(null); // extractProvinceView() output
   const [rasterTileUrl, setRasterTileUrl] = useState(null);
+  const [rasterSource, setRasterSource] = useState(null);
+  const [districtRasterReadiness, setDistrictRasterReadiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // ── History overlays — layer WMS các snapshot cũ đã publish ──────────────
-  // `historyItems`: list [{id, analysisDate, geoserverLayer, tileUrl}] filtered
-  //   chỉ chứa item CÓ geoserver_layer (đã publish) — item chỉ có GEE tile URL
-  //   không load vào đây vì TTL 24h, add rồi vài giờ sau tile 404.
+  // ── History overlays — bộ WMS huyện của ngày đã publish ──────────────────
+  // `historyItems` chỉ chứa item có đủ số layer theo metadata API. Không dùng
+  // URL tạm cho lịch sử vì URL này có thể hết hạn.
   // `historyLayers`: state `{ [id]: { visible, opacity } }` — chỉ track UI
-  //   state của snapshot ĐANG được add lên map. Xoá khoản khỏi map ↔ delete key.
+  //   của ngày được chọn. Mỗi lần chọn ngày mới sẽ thay ngày trước.
   const [historyItems, setHistoryItems] = useState([]);
   const [historyLayers, setHistoryLayers] = useState({});
+  const [layerVisible, setLayerVisible] = useState({
+    district: true,
+    heat: true,
+  });
+  const [districtOpacity, setDistrictOpacity] = useState(0.45);
+  const [heatOpacity, setHeatOpacity] = useState(0.7);
+
+  const requestAbortRef = useRef(null);
+  const pollAbortRef = useRef(null);
+  const pollTimerRef = useRef(null);
+  const pollRunRef = useRef(0);
+  const historyAbortRef = useRef(null);
+  const historySelectionAbortRef = useRef(null);
+
+  const stopDistrictPoll = useCallback(() => {
+    pollRunRef.current += 1;
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    pollAbortRef.current?.abort();
+    pollAbortRef.current = null;
+  }, []);
+
+  const startDistrictPoll = useCallback(
+    (snapshot) => {
+      const snapshotId = snapshot?.id;
+      if (!snapshotId) return;
+
+      stopDistrictPoll();
+      const runId = pollRunRef.current;
+      let attempts = 0;
+
+      const poll = async () => {
+        if (pollRunRef.current !== runId) return;
+        pollTimerRef.current = null;
+        attempts += 1;
+        const controller = new AbortController();
+        pollAbortRef.current = controller;
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          FIRE_REQUEST_TIMEOUT_MS,
+        );
+
+        try {
+          const res = await getFireRiskDistrictExports(snapshotId, {
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted) return;
+
+          const payload = res?.data ?? res;
+          const raster = toStableFireDistrictRaster(payload);
+          setDistrictRasterReadiness(raster);
+
+          if (raster.stable) {
+            setRasterTileUrl(raster.tileUrl);
+            setRasterSource("geoserver");
+            stopDistrictPoll();
+            return;
+          }
+          if (raster.hasDistrictScope) {
+            setRasterTileUrl(null);
+            setRasterSource(null);
+          }
+        } catch {
+          // Không thay bằng ảnh tỉnh khi batch huyện đang lỗi/thiếu. Poll có
+          // giới hạn sẽ thử lại nếu lỗi tạm thời.
+        } finally {
+          clearTimeout(timeoutId);
+          if (pollAbortRef.current === controller) {
+            pollAbortRef.current = null;
+          }
+        }
+
+        if (pollRunRef.current === runId && attempts < FIRE_POLL_MAX_ATTEMPTS) {
+          pollTimerRef.current = setTimeout(poll, FIRE_POLL_INTERVAL_MS);
+        }
+      };
+
+      pollTimerRef.current = setTimeout(poll, FIRE_POLL_INTERVAL_MS);
+    },
+    [stopDistrictPoll],
+  );
 
   const fetchData = useCallback(async () => {
+    requestAbortRef.current?.abort();
+    historySelectionAbortRef.current?.abort();
+    historySelectionAbortRef.current = null;
+    stopDistrictPoll();
+    setHistoryLayers({});
+    setLayerVisible((current) => ({ ...current, heat: true }));
+    setRasterTileUrl(null);
+    setRasterSource(null);
+    setDistrictRasterReadiness(null);
+
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, FIRE_REQUEST_TIMEOUT_MS);
+
     setLoading(true);
     setError(null);
     try {
-      const [latestRes, mapRes] = await Promise.all([
-        getFireRiskLatest(1),
-        getFireRiskMap(1),
+      // `/latest` là payload thống kê gọn; geometry huyện đã được tách riêng
+      // sang `/map` để tránh lặp GeoJSON nặng trong response snapshot.
+      const [latestResult, mapResult] = await Promise.allSettled([
+        getFireRiskLatest(1, { signal: controller.signal }),
+        getFireRiskMap(1, { signal: controller.signal }),
       ]);
-      const latestPayload = latestRes?.data ?? latestRes;
-      const mapPayload = mapRes?.data ?? mapRes;
+      if (requestAbortRef.current !== controller || controller.signal.aborted) {
+        return;
+      }
+      if (latestResult.status !== "fulfilled") throw latestResult.reason;
 
-      const nextView = extractFireRiskView({ latestPayload, mapPayload });
+      const latestRes = latestResult.value;
+      const mapRes = mapResult.status === "fulfilled" ? mapResult.value : null;
+      const latestPayload = latestRes?.data ?? latestRes;
+      const mapPayload = mapRes?.data ?? mapRes ?? {};
+      const nextView = extractFireRiskView({
+        latestPayload,
+        mapPayload,
+      });
       setView(nextView);
 
-      // Thứ tự nguồn raster nền (fallback chain):
-      //   1. WMS GeoServer từ `geoserverLayer` — persistent, không expire.
-      //      Có khi server đã export GCS → MinIO → GeoServer publish thành công.
-      //   2. Earth Engine tile URL từ `geeTileUrl` — server luôn cố sinh field
-      //      này (không cần GCS). URL có TTL ~24h nên với snapshot cũ hơn 24h
-      //      có thể expired (maplibre log 404, không crash).
-      //   3. Không có raster → chỉ vẽ vector polygon huyện (fill opacity 0.45
-      //      trong addDistrictLayers).
-      let tile = null;
-      if (nextView.geoserverLayer) {
-        tile = buildWmsTileUrl({ geoserver_layer: nextView.geoserverLayer });
-      } else if (nextView.geeTileUrl) {
-        tile = nextView.geeTileUrl;
+      const provincePreviewUrl = getUsableTemporaryTileTemplate(
+        nextView.geeTileUrl,
+        nextView.geeTileGeneratedAt,
+      );
+
+      const snapshotId = nextView.snapshot?.id;
+      if (snapshotId) {
+        try {
+          const districtRes = await getFireRiskDistrictExports(snapshotId, {
+            signal: controller.signal,
+          });
+          if (
+            requestAbortRef.current !== controller ||
+            controller.signal.aborted
+          ) {
+            return;
+          }
+
+          const districtPayload = districtRes?.data ?? districtRes;
+          const raster = toStableFireDistrictRaster(districtPayload);
+          setDistrictRasterReadiness(raster);
+          if (raster.stable) {
+            setRasterTileUrl(raster.tileUrl);
+            setRasterSource("geoserver");
+          } else {
+            // Có scope huyện nhưng batch chưa đủ/lỗi: để trống raster hiện tại,
+            // tuyệt đối không thay bằng ảnh preview toàn tỉnh.
+            if (!raster.hasDistrictScope && !nextView.hasDistrictScope) {
+              setRasterTileUrl(provincePreviewUrl);
+              setRasterSource(provincePreviewUrl ? "province" : null);
+            }
+            startDistrictPoll(nextView.snapshot);
+          }
+        } catch {
+          if (requestAbortRef.current === controller) {
+            if (!nextView.hasDistrictScope) {
+              setRasterTileUrl(provincePreviewUrl);
+              setRasterSource(provincePreviewUrl ? "province" : null);
+            }
+            startDistrictPoll(nextView.snapshot);
+          }
+        }
+      } else if (!nextView.hasDistrictScope) {
+        setRasterTileUrl(provincePreviewUrl);
+        setRasterSource(provincePreviewUrl ? "province" : null);
       }
-      setRasterTileUrl(tile || null);
     } catch (err) {
-      setError(err?.message || "Không thể tải dữ liệu cảnh báo cháy rừng.");
+      if (requestAbortRef.current === controller) {
+        setError(
+          timedOut
+            ? "Yêu cầu dữ liệu cảnh báo cháy đã quá thời gian chờ."
+            : err?.message || "Không thể tải dữ liệu cảnh báo cháy rừng.",
+        );
+      }
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      if (requestAbortRef.current === controller) {
+        requestAbortRef.current = null;
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [startDistrictPoll, stopDistrictPoll]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Fetch history 1 lần khi mount. Endpoint public `/published-history` đã
-  // force filter geoserver_layer server-side → payload chỉ chứa snapshot đã
-  // publish (nhỏ hơn, không phải fetch cả list rồi filter client).
-  // GEE-only snapshot không cần vì URL TTL 24h expire, add rồi vài giờ 404.
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getFireRiskHistory(1, 24);
-        const rawItems = res?.data?.data?.items ?? res?.data?.items ?? [];
-        const enriched = rawItems
-          .map((it) => {
-            const layer = it.geoserver_layer || it.geoserverLayer;
-            if (!layer) return null;
-            return {
-              id: String(it.id),
-              analysisDate: it.analysis_date || it.analysisDate,
-              geoserverLayer: layer,
-              tileUrl: buildWmsTileUrl({ geoserver_layer: layer }),
-            };
-          })
-          .filter((it) => it && it.tileUrl);
-        setHistoryItems(enriched);
-      } catch (err) {
-        console.warn("[FireRisk] load history failed:", err?.message);
+  // Endpoint public chỉ trả ngày có đủ bộ GeoServer + MinIO theo huyện.
+  const loadPublishedHistory = useCallback(async () => {
+    historyAbortRef.current?.abort();
+    const controller = new AbortController();
+    historyAbortRef.current = controller;
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      FIRE_REQUEST_TIMEOUT_MS,
+    );
+
+    try {
+      const res = await getFireRiskHistory(1, 24, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      const rawItems = res?.data?.data?.items ?? res?.data?.items ?? [];
+      const enriched = rawItems.map(normalizePublishedFireItem).filter(Boolean);
+      setHistoryItems(enriched);
+    } catch {
+      // Snapshot hiện tại vẫn hoạt động nếu lịch sử công khai tạm lỗi.
+    } finally {
+      clearTimeout(timeoutId);
+      if (historyAbortRef.current === controller) {
+        historyAbortRef.current = null;
       }
-    })();
+    }
   }, []);
+
+  useEffect(() => {
+    loadPublishedHistory();
+
+    return () => {
+      const controller = historyAbortRef.current;
+      historyAbortRef.current = null;
+      controller?.abort();
+    };
+  }, [loadPublishedHistory]);
+
+  const handleSelectPublishedDate = useCallback(
+    async (id) => {
+      const item = historyItems.find((historyItem) => historyItem.id === id);
+      if (!item?.tileUrl) return;
+
+      // Hiển thị ngay mảng layer từ published-history. Request district chỉ
+      // dùng để xác thực/làm mới; nếu route lỗi thì WMS history vẫn được giữ.
+      setHistoryLayers({
+        [id]: { visible: true, opacity: 0.7 },
+      });
+      setLayerVisible((current) => ({ ...current, heat: false }));
+
+      historySelectionAbortRef.current?.abort();
+      const controller = new AbortController();
+      historySelectionAbortRef.current = controller;
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        FIRE_REQUEST_TIMEOUT_MS,
+      );
+
+      try {
+        const res = await getFireRiskDistrictExports(id, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+
+        const payload = res?.data ?? res;
+        const raster = toStableFireDistrictRaster(payload, item);
+        if (!raster.stable) return;
+
+        setHistoryItems((current) =>
+          current.map((historyItem) =>
+            historyItem.id === id
+              ? {
+                  ...historyItem,
+                  geoserverLayers: raster.layers,
+                  geoserverLayerCount: raster.ready,
+                  totalDistricts: raster.total,
+                  tileUrl: raster.tileUrl,
+                }
+              : historyItem,
+          ),
+        );
+      } catch {
+        // Published-history đã chứa bộ layer ổn định, nên giữ nguyên trên map.
+      } finally {
+        clearTimeout(timeoutId);
+        if (historySelectionAbortRef.current === controller) {
+          historySelectionAbortRef.current = null;
+        }
+      }
+    },
+    [historyItems],
+  );
+
+  useEffect(() => {
+    return () => {
+      const requestController = requestAbortRef.current;
+      requestAbortRef.current = null;
+      requestController?.abort();
+      const historyController = historySelectionAbortRef.current;
+      historySelectionAbortRef.current = null;
+      historyController?.abort();
+      stopDistrictPoll();
+    };
+  }, [stopDistrictPoll]);
+
+  const currentSnapshotId = view?.snapshot?.id
+    ? String(view.snapshot.id)
+    : null;
+
+  useEffect(() => {
+    if (!currentSnapshotId) return;
+    const publishedCurrent = historyItems.find(
+      (item) => item.id === currentSnapshotId,
+    );
+    if (!publishedCurrent?.tileUrl) return;
+
+    const raster = toStableFireDistrictRaster(publishedCurrent);
+    if (!raster.stable) return;
+    setDistrictRasterReadiness(raster);
+    setRasterTileUrl(raster.tileUrl);
+    setRasterSource("geoserver");
+    stopDistrictPoll();
+  }, [currentSnapshotId, historyItems, stopDistrictPoll]);
 
   // Danh sách cấp thực sự có diện tích — chỉ hiện các cấp > 0 trong dropdown.
   const levelsWithArea = useMemo(() => {
@@ -682,16 +1185,10 @@ export function MonitoringAndAlerting() {
     }
     return out;
   }, [view]);
-
-  // Layer toggle: 2 layer riêng biệt user có thể bật/tắt & chỉnh opacity.
-  //   - "district": vector polygon huyện tô màu theo maxLevel (TB toàn tỉnh).
-  //   - "heat":     raster pixel-level từ Earth Engine (bản đồ nhiệt cấp cháy).
-  const [layerVisible, setLayerVisible] = useState({
-    district: true,
-    heat: true,
-  });
-  const [districtOpacity, setDistrictOpacity] = useState(0.45);
-  const [heatOpacity, setHeatOpacity] = useState(0.7);
+  const selectedHistoryId = Object.keys(historyLayers)[0] ?? null;
+  const selectedHistoryItem = selectedHistoryId
+    ? historyItems.find((item) => item.id === selectedHistoryId)
+    : null;
 
   // ── Map sync — 4 effect tách biệt để KHÔNG NHÁY khi toggle/kéo slider ────
   //
@@ -723,7 +1220,11 @@ export function MonitoringAndAlerting() {
   // `layout.visibility=visible|none`. Toggle không nháy, không refetch tile.
   useEffect(() => {
     if (!mapInstance) return;
-    setLayerVisibilityOnMap(mapInstance, FIRE_RASTER_LAYER, layerVisible.heat);
+    setLayerVisibilityOnMap(
+      mapInstance,
+      FIRE_RASTER_LAYER,
+      layerVisible.heat && Boolean(rasterTileUrl),
+    );
     setLayerVisibilityOnMap(mapInstance, FIRE_DIST_FILL, layerVisible.district);
     setLayerVisibilityOnMap(mapInstance, FIRE_DIST_LINE, layerVisible.district);
   }, [mapInstance, layerVisible, rasterTileUrl, view]);
@@ -798,8 +1299,6 @@ export function MonitoringAndAlerting() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  const [mechExpanded, setMechExpanded] = useState(false);
-
   return (
     <TooltipProvider delayDuration={200}>
       <div className="@container/fire flex h-full flex-col gap-3 p-3 @[360px]/fire:gap-4 @[360px]/fire:p-4">
@@ -816,7 +1315,10 @@ export function MonitoringAndAlerting() {
               type="button"
               variant="ghost"
               size="xs"
-              onClick={fetchData}
+              onClick={() => {
+                fetchData();
+                loadPublishedHistory();
+              }}
               disabled={loading}
             >
               <RefreshCw
@@ -834,59 +1336,22 @@ export function MonitoringAndAlerting() {
           )}
         </div>
 
-        {/* Cơ chế dữ liệu — collapsible để tiết kiệm không gian sidebar hẹp */}
-        <div className="rounded-lg border border-blue-200 bg-blue-50 text-[11px] leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => setMechExpanded((v) => !v)}
-            aria-expanded={mechExpanded}
-            className="flex h-auto w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold text-blue-900 hover:bg-blue-100/50 dark:text-blue-200 dark:hover:bg-blue-900/20"
-          >
-            <span className="flex items-center gap-1.5">
-              <Info className="h-3.5 w-3.5" />
-              Cơ chế dữ liệu
-            </span>
-            <span className="text-[10px] font-normal text-blue-700 dark:text-blue-300">
-              {mechExpanded ? "Ẩn" : "Xem"}
-            </span>
-          </Button>
-          {mechExpanded && (
-            <ul className="list-disc space-y-1 border-t border-blue-200 px-3 pt-2 pb-3 pl-7 dark:border-blue-900">
-              <li>
-                <b>Mô hình</b>: Random Forest.
-              </li>
-              <li>
-                <b>Tập dữ liệu đào tạo</b>: MCD64A1 + FireCCI51 + FIRMS (20
-                tháng mùa khô 2019-2023).
-              </li>
-              <li>
-                <b>Cấp cảnh báo (C1-C5)</b>: NDVI + NDMI + NBR + LST + ERA5 +
-                slope + fuel + Nesterov P. Không phải phân cấp thuần Nesterov
-                theo QĐ 25/2022.
-              </li>
-              <li>
-                <b>Nguồn ảnh</b>: Sentinel-2 cửa sổ trượt, MODIS LST, ERA5-Land.
-              </li>
-            </ul>
-          )}
-        </div>
-
         {/* History browser — collapsible độc lập ngang hàng "Cơ chế dữ liệu".
             Đặt ngoài `{view && ...}` để user vẫn xem lịch sử được khi latest
             snapshot đang tính toán (view=null). `currentSnapshotId` optional. */}
         <FireRiskHistoryBrowser
           items={historyItems}
           activeIds={Object.keys(historyLayers)}
-          currentSnapshotId={
-            view?.snapshot?.id ? String(view.snapshot.id) : null
-          }
-          onAdd={(id) =>
-            setHistoryLayers((s) =>
-              s[id] ? s : { ...s, [id]: { visible: true, opacity: 0.6 } },
-            )
-          }
+          currentSnapshotId={currentSnapshotId}
+          onSelect={handleSelectPublishedDate}
         />
+        {selectedHistoryItem && (
+          <p className="rounded-md border border-info/30 bg-info/10 px-2.5 py-2 text-[11px] leading-4 text-info-foreground">
+            Đang hiển thị ảnh bản đồ ngày{" "}
+            <b>{formatFireAnalysisDate(selectedHistoryItem.analysisDate)}</b>.
+            Thống kê bên dưới vẫn là dữ liệu mới nhất.
+          </p>
+        )}
 
         {loading && !view && (
           <div className="flex flex-1 items-center justify-center">
@@ -1059,15 +1524,18 @@ export function MonitoringAndAlerting() {
               </Card>
             )}
 
-            {/* Layer manager — gồm 2 lớp cố định (district + heat) + N overlay
-                history user add từ browser bên dưới. Header có Refresh (fetch
-                lại snapshot) + Đặt lại mặc định (reset visibility/opacity +
-                gỡ hết overlay history). */}
+            {/* Layer manager — raster hiện tại, ranh giới khi có geometry và các
+                overlay lịch sử. */}
             <FireRiskLayerManager
-              districtFeatureCollection={view.districtFeatureCollection}
-              rasterTileUrl={rasterTileUrl}
-              geeDownloadUrl={view.geeDownloadUrl}
+              hasDistrictGeometry={
+                view.districtFeatureCollection?.features?.length > 0
+              }
+              geeDownloadUrl={
+                rasterSource === "province" ? view.geeDownloadUrl : null
+              }
               geeDownloadFilename={view.geeDownloadFilename}
+              rasterSource={rasterSource}
+              districtRasterReadiness={districtRasterReadiness}
               layerVisible={layerVisible}
               onLayerToggle={(id) =>
                 setLayerVisible((s) => ({ ...s, [id]: !s[id] }))
@@ -1082,10 +1550,17 @@ export function MonitoringAndAlerting() {
                   if (!item) return null;
                   return {
                     id,
-                    geoserverLayer: item.geoserverLayer,
-                    dateStr: item.analysisDate
-                      ? String(item.analysisDate).slice(0, 10)
-                      : id,
+                    geoserverLayers: item.geoserverLayers,
+                    readyCount:
+                      item.geoserverLayerCount ??
+                      item.geoserverLayers?.length ??
+                      0,
+                    totalDistricts:
+                      item.totalDistricts ??
+                      item.total_districts ??
+                      item.geoserverLayers?.length ??
+                      0,
+                    dateStr: formatFireAnalysisDate(item.analysisDate) || id,
                     visible: cfg.visible !== false,
                     opacity: cfg.opacity ?? 0.6,
                   };
@@ -1106,17 +1581,22 @@ export function MonitoringAndAlerting() {
                   s[id] ? { ...s, [id]: { ...s[id], opacity } } : s,
                 )
               }
-              onHistoryRemove={(id) =>
+              onHistoryRemove={(id) => {
                 setHistoryLayers((s) => {
                   const { [id]: _, ...rest } = s;
                   return rest;
-                })
-              }
+                });
+                setLayerVisible((current) => ({
+                  ...current,
+                  heat: true,
+                }));
+              }}
               onResetDefaults={() => {
                 setLayerVisible({ district: true, heat: true });
                 setDistrictOpacity(0.45);
                 setHeatOpacity(0.7);
                 setHistoryLayers({});
+                historySelectionAbortRef.current?.abort();
               }}
             />
 
@@ -1166,16 +1646,15 @@ export function MonitoringAndAlerting() {
 }
 
 /**
- * Layer manager tối giản cho Fire Risk. 2 layer cố định:
- *   1. Vector polygon huyện — download geojson.
- *   2. Raster nhiệt cấp cháy — copy tile URL + tải GeoTIFF clip theo tỉnh.
- *
- * Mỗi row: dot + name + eye + download + slider inline. Không header
- * collapsible, không stats panel, không description dài dòng.
+ * Layer manager tối giản: raster nguy cơ hiện tại, ranh giới khi có geometry và
+ * các raster lịch sử đã công bố.
  */
 function FireRiskLayerManager({
+  hasDistrictGeometry,
   geeDownloadUrl,
   geeDownloadFilename,
+  rasterSource,
+  districtRasterReadiness,
   layerVisible,
   onLayerToggle,
   districtOpacity,
@@ -1188,24 +1667,32 @@ function FireRiskLayerManager({
   onHistoryRemove,
   onResetDefaults,
 }) {
-  // 2 lớp cố định + N lớp history (append động khi user add từ history browser).
+  const readyCount = districtRasterReadiness?.ready ?? 0;
+  const totalDistricts = districtRasterReadiness?.total ?? 0;
+  const districtProgress =
+    totalDistricts > 0 ? `${readyCount}/${totalDistricts} huyện` : null;
+
+  // Ranh giới chỉ xuất hiện khi API thực sự trả geometry có tọa độ. Raster
+  // nguy cơ và các lớp lịch sử vẫn hoạt động độc lập.
   const baseRows = [
-    {
-      id: "district",
-      label: "Ranh giới huyện",
-      dot: "bg-primary",
-      visible: layerVisible.district,
-      opacity: districtOpacity,
-      onToggle: () => onLayerToggle("district"),
-      onOpacityChange: onDistrictOpacityChange,
-      rasterUrl: null,
-      downloadFilename: null,
-    },
+    ...(hasDistrictGeometry
+      ? [
+          {
+            id: "district",
+            label: "Cảnh báo theo huyện",
+            dot: "bg-primary",
+            visible: layerVisible.district,
+            opacity: districtOpacity,
+            onToggle: () => onLayerToggle("district"),
+            onOpacityChange: onDistrictOpacityChange,
+            rasterUrl: null,
+            downloadFilename: null,
+          },
+        ]
+      : []),
     {
       id: "heat",
-      // Đổi tên rõ ràng: đây là raster CẤP CẢNH BÁO CHÁY (0-5), không phải
-      // nhiệt độ đo đạc — tránh nhầm với LST/MODIS.
-      label: "Bản đồ nhiệt cấp cảnh báo cháy",
+      label: "Bản đồ nhiệt cảnh báo cháy rừng",
       dot: "bg-orange-500",
       visible: layerVisible.heat,
       opacity: heatOpacity,
@@ -1221,7 +1708,7 @@ function FireRiskLayerManager({
   // gỡ overlay đã add, không áp dụng cho district/heat cố định.
   const historyLayerRows = historyRows.map((h) => ({
     id: `hist-${h.id}`,
-    label: `Bản đồ nhiệt ${h.dateStr}`,
+    label: `Bản đồ ${h.dateStr} (${h.readyCount ?? h.geoserverLayers?.length ?? 0}/${h.totalDistricts || "—"} huyện)`,
     dot: "bg-slate-400",
     visible: h.visible !== false,
     opacity: h.opacity ?? 0.6,
@@ -1371,32 +1858,34 @@ function FireRiskLayerRow({ row }) {
  *
  * Row hành vi:
  *   - Item current snapshot bị disable (đã hiển thị mặc định).
- *   - Item chưa thêm: nút "+ Thêm" → gọi onAdd(id) → parent append vào
- *     section "Lớp bản đồ".
- *   - Item đã thêm: nút "Đã thêm" (disabled); gỡ overlay bằng × trong Lớp
- *     bản đồ, không phải ở đây.
+ *   - Item chưa chọn: nút "Hiển thị" thay ngày lịch sử đang xem.
+ *   - Item đã chọn: nút disabled; gỡ bằng × trong "Lớp bản đồ".
  *
- * Server đã filter chỉ trả snapshot có geoserver_layer (hasGeoserverLayer=true)
- * → mọi item ở đây đều publish được, không phải guard client.
+ * Server chỉ trả snapshot có đủ bộ raster huyện đã công bố. Client vẫn xác
+ * thực count động từ metadata trước khi đưa item vào danh sách.
  */
 function FireRiskHistoryBrowser({
   items,
   activeIds,
   currentSnapshotId,
-  onAdd,
+  onSelect,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [mechExpanded, setMechExpanded] = useState(false);
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
     return items.filter((it) => {
-      const dateStr = it.analysisDate
+      const rawDate = it.analysisDate
         ? String(it.analysisDate).slice(0, 10)
         : "";
-      const layer = String(it.geoserverLayer || "").toLowerCase();
-      return dateStr.includes(q) || layer.includes(q);
+      const displayDate = formatFireAnalysisDate(it.analysisDate).toLowerCase();
+      const layers = (it.geoserverLayers || []).join(",").toLowerCase();
+      return (
+        rawDate.includes(q) || displayDate.includes(q) || layers.includes(q)
+      );
     });
   }, [items, query]);
 
@@ -1407,134 +1896,174 @@ function FireRiskHistoryBrowser({
   const isEmpty = !items?.length;
 
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 text-[11px] leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-      {/* Header collapsible — cùng skin "Cơ chế dữ liệu" (blue theme) để user
+    <div className="flex flex-col gap-1">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 text-[11px] leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setMechExpanded((v) => !v)}
+          aria-expanded={mechExpanded}
+          className="flex h-auto w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold text-blue-900 hover:bg-blue-100/50 dark:text-blue-200 dark:hover:bg-blue-900/20"
+        >
+          <span className="flex items-center gap-1.5">
+            <Info className="h-3.5 w-3.5" />
+            Cơ chế dữ liệu
+          </span>
+          <span className="text-[10px] font-normal text-blue-700 dark:text-blue-300">
+            {mechExpanded ? "Ẩn" : "Xem"}
+          </span>
+        </Button>
+        {mechExpanded && (
+          <ul className="list-disc space-y-1 border-t border-blue-200 px-3 pt-2 pb-3 pl-7 dark:border-blue-900">
+            <li>
+              <b>Mô hình</b>: Random Forest.
+            </li>
+            <li>
+              <b>Tập dữ liệu đào tạo</b>: MCD64A1 + FireCCI51 + FIRMS (20 tháng
+              mùa khô 2019-2023).
+            </li>
+            <li>
+              <b>Cấp cảnh báo (C1-C5)</b>: NDVI + NDMI + NBR + LST + ERA5 +
+              slope + fuel + Nesterov P. Không phải phân cấp thuần Nesterov theo
+              QĐ 25/2022.
+            </li>
+            <li>
+              <b>Nguồn ảnh</b>: Sentinel-2 cửa sổ trượt, MODIS LST, ERA5-Land.
+            </li>
+          </ul>
+        )}
+      </div>
+      <div className="rounded-lg border border-blue-200 bg-blue-50 text-[11px] leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+        {/* Cơ chế dữ liệu — collapsible để tiết kiệm không gian sidebar hẹp */}
+
+        {/* Header collapsible — cùng skin "Cơ chế dữ liệu" (blue theme) để user
           nhận ra section quan trọng, không bị chìm vào các card border-border. */}
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={() => !isEmpty && setExpanded((v) => !v)}
-        disabled={isEmpty}
-        aria-expanded={expanded && !isEmpty}
-        className="flex h-auto w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold text-blue-900 hover:bg-blue-100/50 dark:text-blue-200 dark:hover:bg-blue-900/20"
-      >
-        <span className="flex items-center gap-1.5">
-          <Layers className="h-3.5 w-3.5" />
-          Lịch sử cảnh báo cháy rừng
-        </span>
-        <span className="flex items-center gap-1.5 text-[10px] font-normal text-blue-700 dark:text-blue-300">
-          <span className="tabular-nums">{items?.length ?? 0}</span>
-          <span>{isEmpty ? "Trống" : expanded ? "Ẩn" : "Xem"}</span>
-        </span>
-      </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => !isEmpty && setExpanded((v) => !v)}
+          disabled={isEmpty}
+          aria-expanded={expanded && !isEmpty}
+          className="flex h-auto w-full items-center justify-between rounded-lg px-3 py-2 text-[11px] font-semibold text-blue-900 hover:bg-blue-100/50 dark:text-blue-200 dark:hover:bg-blue-900/20"
+        >
+          <span className="flex items-center gap-1.5">
+            <Layers className="h-3.5 w-3.5" />
+            Chọn ngày bản đồ đã công bố
+          </span>
+          <span className="flex items-center gap-1.5 text-[10px] font-normal text-blue-700 dark:text-blue-300">
+            <span className="tabular-nums">{items?.length ?? 0}</span>
+            <span>{isEmpty ? "Trống" : expanded ? "Ẩn" : "Xem"}</span>
+          </span>
+        </Button>
 
-      {isEmpty && (
-        <div className="border-t border-blue-200 px-3 py-2 text-[10px] text-blue-700 dark:border-blue-900 dark:text-blue-300">
-          Chưa có dữ liệu lịch sử sẵn sàng để hiển thị.
-        </div>
-      )}
+        {isEmpty && (
+          <div className="border-t border-blue-200 px-3 py-2 text-[10px] text-blue-700 dark:border-blue-900 dark:text-blue-300">
+            Chưa có dữ liệu lịch sử sẵn sàng để hiển thị.
+          </div>
+        )}
 
-      {expanded && !isEmpty && (
-        <div className="border-t border-blue-200 dark:border-blue-900">
-          {/* Search — filter theo ngày (YYYY-MM-DD) hoặc tên layer WMS. */}
-          <div className="px-3 pt-2 pb-1">
-            <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-blue-500 dark:text-blue-400" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Tìm theo ngày..."
-                className="w-full rounded border border-blue-300 bg-white py-1 pr-6 pl-6 text-[11px] text-blue-900 outline-none placeholder:text-blue-400 focus:border-blue-500 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-100 dark:placeholder:text-blue-600"
-              />
+        {expanded && !isEmpty && (
+          <div className="border-t border-blue-200 dark:border-blue-900">
+            {/* Search — filter theo ngày (YYYY-MM-DD) hoặc tên layer WMS. */}
+            <div className="px-3 pt-2 pb-1">
+              <div className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-blue-500 dark:text-blue-400" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Tìm theo ngày..."
+                  className="w-full rounded border border-blue-300 bg-white py-1 pr-6 pl-6 text-[11px] text-blue-900 outline-none placeholder:text-blue-400 focus:border-blue-500 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-100 dark:placeholder:text-blue-600"
+                />
+                {query && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setQuery("")}
+                    className="absolute top-1/2 right-1 -translate-y-1/2 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                    title="Xoá tìm kiếm"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
               {query && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => setQuery("")}
-                  className="absolute top-1/2 right-1 -translate-y-1/2 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                  title="Xoá tìm kiếm"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                <p className="mt-1 text-[10px] text-blue-700 tabular-nums dark:text-blue-300">
+                  {filtered.length}/{items.length} khớp
+                </p>
               )}
             </div>
-            {query && (
-              <p className="mt-1 text-[10px] text-blue-700 tabular-nums dark:text-blue-300">
-                {filtered.length}/{items.length} khớp
-              </p>
-            )}
-          </div>
 
-          {/* List — max-h giới hạn để card không phình khi có nhiều tháng. */}
-          <ul className="max-h-56 divide-y divide-blue-200 overflow-y-auto border-t border-blue-200 dark:divide-blue-900 dark:border-blue-900">
-            {filtered.length === 0 ? (
-              <li className="px-3 py-3 text-center text-[11px] text-blue-700 dark:text-blue-300">
-                Không có kỳ dữ liệu khớp "{query}"
-              </li>
-            ) : (
-              filtered.map((it) => {
-                const isCurrent = it.id === currentSnapshotId;
-                const added = activeSet.has(it.id);
-                const dateStr = it.analysisDate
-                  ? String(it.analysisDate).slice(0, 10)
-                  : it.id;
-                return (
-                  <li
-                    key={it.id}
-                    className="flex items-center gap-2 px-3 py-1.5"
-                  >
-                    <span
-                      className="flex-1 truncate tabular-nums"
-                      title={it.geoserverLayer}
+            {/* List — max-h giới hạn để card không phình khi có nhiều tháng. */}
+            <ul className="max-h-56 divide-y divide-blue-200 overflow-y-auto border-t border-blue-200 dark:divide-blue-900 dark:border-blue-900">
+              {filtered.length === 0 ? (
+                <li className="px-3 py-3 text-center text-[11px] text-blue-700 dark:text-blue-300">
+                  Không có kỳ dữ liệu khớp "{query}"
+                </li>
+              ) : (
+                filtered.map((it) => {
+                  const isCurrent = it.id === currentSnapshotId;
+                  const added = activeSet.has(it.id);
+                  const dateStr = it.analysisDate
+                    ? String(it.analysisDate).slice(0, 10)
+                    : it.id;
+                  return (
+                    <li
+                      key={it.id}
+                      className="flex items-center gap-2 px-3 py-1.5"
                     >
-                      {dateStr}
-                      {isCurrent && (
-                        <span className="ml-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
-                          (hiện tại)
-                        </span>
-                      )}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      onClick={() => !isCurrent && !added && onAdd(it.id)}
-                      disabled={isCurrent || added}
-                      className={`shrink-0 text-[10px] ${
-                        added
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
-                          : isCurrent
-                            ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
-                            : "border-blue-400 bg-white text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
-                      }`}
-                      title={
-                        isCurrent
-                          ? "Kỳ hiện tại đang được hiển thị."
-                          : added
-                            ? "Đã thêm vào lớp bản đồ."
-                            : "Thêm kỳ này vào bản đồ"
-                      }
-                    >
-                      {isCurrent ? (
-                        "Đang hiển thị"
-                      ) : added ? (
-                        "Đã thêm"
-                      ) : (
-                        <>
-                          <Plus className="h-3 w-3" />
-                          Thêm
-                        </>
-                      )}
-                    </Button>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
-      )}
+                      <span
+                        className="flex-1 truncate tabular-nums"
+                        title={(it.geoserverLayers || []).join(", ")}
+                      >
+                        {formatFireAnalysisDate(it.analysisDate) || dateStr}
+                        {isCurrent && (
+                          <span className="ml-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                            (hiện tại)
+                          </span>
+                        )}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        onClick={() => !isCurrent && !added && onSelect(it.id)}
+                        disabled={isCurrent || added}
+                        className={`shrink-0 text-[10px] ${
+                          added
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+                            : isCurrent
+                              ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+                              : "border-blue-400 bg-white text-blue-700 hover:bg-blue-100 hover:text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+                        }`}
+                        title={
+                          isCurrent
+                            ? "Kỳ hiện tại đang được hiển thị."
+                            : added
+                              ? "Ngày này đang được hiển thị."
+                              : "Hiển thị ngày này trên bản đồ"
+                        }
+                      >
+                        {isCurrent ? (
+                          "Đang hiển thị"
+                        ) : added ? (
+                          "Đang chọn"
+                        ) : (
+                          <>
+                            <Plus className="h-3 w-3" />
+                            Hiển thị
+                          </>
+                        )}
+                      </Button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

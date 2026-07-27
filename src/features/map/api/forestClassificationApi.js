@@ -31,8 +31,15 @@ export async function queryForestClassification(year, month) {
   });
 }
 
-export async function getForestClassificationSnapshot(id) {
-  return fetcher(`${serviceForestClassificationPath}/snapshot/${id}`);
+export async function getForestClassificationSnapshot(id, options = {}) {
+  return fetcher(`${serviceForestClassificationPath}/snapshot/${id}`, options);
+}
+
+export async function getForestClassificationDistrictExports(id, options = {}) {
+  return fetcher(
+    `${serviceForestClassificationPath}/snapshots/${id}/districts`,
+    options,
+  );
 }
 
 export async function getForestClassificationPublishedHistory(page = 1, limit = 24) {

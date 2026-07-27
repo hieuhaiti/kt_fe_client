@@ -11,27 +11,35 @@ export function useFireRiskLatest(minRiskLevel = 1, options = {}) {
   );
 }
 
-export async function getFireRiskLatest(minRiskLevel = 1) {
+export async function getFireRiskLatest(minRiskLevel = 1, options = {}) {
   return fetcher(
     withQuery(`${serviceFireRiskPath}/latest`, { minRiskLevel }),
+    options,
   );
 }
 
-export async function getFireRiskMap(minRiskLevel = 4) {
+export async function getFireRiskMap(minRiskLevel = 4, options = {}) {
   return fetcher(
     withQuery(`${serviceFireRiskPath}/map`, { minRiskLevel }),
+    options,
   );
 }
 
-// Lấy list snapshot đã publish GeoServer — client dùng để browse các bản
-// phân tích tháng trước và add lại layer WMS làm overlay so sánh. Endpoint
-// public (optionalAuth) `/published-history` — force filter geoserver_layer,
-// trả subset field an toàn cho anon.
+export async function getFireRiskDistrictExports(snapshotId, options = {}) {
+  return fetcher(
+    `${serviceFireRiskPath}/snapshots/${snapshotId}/districts`,
+    options,
+  );
+}
+
+// Lấy list snapshot có đủ bộ raster huyện ổn định trên GeoServer. Endpoint
+// public (optionalAuth) trả field an toàn cho anon, gồm mảng geoserverLayers.
 //
 // KHÔNG dùng `/history` — endpoint đó admin-only (requirePermission
 // `fire_risk.manage`) sẽ 401 cho anon user → history rỗng trên client.
-export async function getFireRiskHistory(page = 1, limit = 30) {
+export async function getFireRiskHistory(page = 1, limit = 30, options = {}) {
   return fetcher(
     withQuery(`${serviceFireRiskPath}/published-history`, { page, limit }),
+    options,
   );
 }

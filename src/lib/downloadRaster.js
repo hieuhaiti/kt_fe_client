@@ -31,11 +31,11 @@ export async function downloadRasterFile(url, filename) {
   if (!response.ok) throw new Error(`Máy chủ trả lỗi HTTP ${response.status}.`);
 
   const blob = await response.blob();
-  if (!blob.size) throw new Error("Tệp raster tải về rỗng.");
+  if (!blob.size) throw new Error("Tệp ảnh tải về rỗng.");
 
   const bytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
   const extension = detectRasterExtension(bytes);
-  if (!extension) throw new Error("Máy chủ không trả về tệp GeoTIFF hợp lệ.");
+  if (!extension) throw new Error("Máy chủ không trả về ảnh bản đồ hợp lệ.");
 
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

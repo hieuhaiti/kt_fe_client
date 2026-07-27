@@ -215,6 +215,36 @@
   --error-404-bg-color: #1f7a4d;
   --error-500-bg-color: #0f766e;
   --error-503-bg-color: #2563eb;
+  --error-400-surface: radial-gradient(
+    circle at 50% 28%,
+    color-mix(in srgb, var(--error-400-bg-color) 18%, transparent),
+    transparent 34rem
+  );
+  --error-401-surface: radial-gradient(
+    circle at 50% 28%,
+    color-mix(in srgb, var(--error-401-bg-color) 18%, transparent),
+    transparent 34rem
+  );
+  --error-403-surface: radial-gradient(
+    circle at 50% 28%,
+    color-mix(in srgb, var(--error-403-bg-color) 18%, transparent),
+    transparent 34rem
+  );
+  --error-404-surface: radial-gradient(
+    circle at 50% 28%,
+    color-mix(in srgb, var(--error-404-bg-color) 18%, transparent),
+    transparent 34rem
+  );
+  --error-500-surface: radial-gradient(
+    circle at 50% 28%,
+    color-mix(in srgb, var(--error-500-bg-color) 18%, transparent),
+    transparent 34rem
+  );
+  --error-503-surface: radial-gradient(
+    circle at 50% 28%,
+    color-mix(in srgb, var(--error-503-bg-color) 18%, transparent),
+    transparent 34rem
+  );
   /* Shadows */
   --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
   --shadow-md: 0 8px 20px -12px rgb(15 23 42 / 0.25);

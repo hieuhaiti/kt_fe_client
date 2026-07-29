@@ -9,6 +9,11 @@ export const useMapStore = create((set, get) => ({
   // Dữ liệu category layers đang hiển thị trên map: { [sourceId]: geojson }
   categoryLayersData: {},
   ogcLayersData: {},
+  // Time-series raster layers: { [groupCode]: { group, step, tileUrl } }
+  timeSeriesLayersData: {},
+  // Trạng thái điều khiển panel Ảnh theo thời gian — giữ qua chuyển tab:
+  // { [groupCode]: { stepIndex, isPlaying, intervalMs } }
+  timeSeriesPanelState: {},
   // compare map
   isSplitMode: false,
 
@@ -100,5 +105,41 @@ export const useMapStore = create((set, get) => ({
 
   clearAllOgcLayersData: () => {
     set({ ogcLayersData: {} });
+  },
+
+  // ── Time-series raster layers ─────────────────────────────────────────────
+  setTimeSeriesLayer: (groupCode, payload) => {
+    set((state) => ({
+      timeSeriesLayersData: {
+        ...state.timeSeriesLayersData,
+        [groupCode]: payload,
+      },
+    }));
+  },
+
+  removeTimeSeriesLayer: (groupCode) => {
+    set((state) => {
+      const nextData = { ...state.timeSeriesLayersData };
+      delete nextData[groupCode];
+      const nextPanel = { ...state.timeSeriesPanelState };
+      delete nextPanel[groupCode];
+      return { timeSeriesLayersData: nextData, timeSeriesPanelState: nextPanel };
+    });
+  },
+
+  clearAllTimeSeriesLayers: () => {
+    set({ timeSeriesLayersData: {}, timeSeriesPanelState: {} });
+  },
+
+  setTimeSeriesPanelState: (groupCode, patch) => {
+    set((state) => ({
+      timeSeriesPanelState: {
+        ...state.timeSeriesPanelState,
+        [groupCode]: {
+          ...(state.timeSeriesPanelState[groupCode] || {}),
+          ...patch,
+        },
+      },
+    }));
   },
 }));

@@ -33,6 +33,11 @@ import {
   getFireRiskHistory,
   getFireRiskDistrictExports,
 } from "@/features/map/api/fireRiskApi";
+import { GEOSERVER_LAYER_ORDER_PRIORITY } from "@/constant/geoserverData";
+import {
+  getDataLayerBeforeId,
+  getRasterLayerBeforeId,
+} from "@/helper/Map/MapHelper";
 import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,6 +67,8 @@ const FIRE_RASTER_SOURCE = "fire-risk-raster-source";
 const FIRE_DIST_FILL = "fire-risk-district-fill";
 const FIRE_DIST_LINE = "fire-risk-district-line";
 const FIRE_RASTER_LAYER = "fire-risk-raster";
+const FIRE_DISTRICT_RASTER_SOURCE_PREFIX = "fire-risk-raster-district-source-";
+const FIRE_DISTRICT_RASTER_LAYER_PREFIX = "fire-risk-raster-district-layer-";
 const HISTORY_SRC_PREFIX = "fire-risk-hist-src-";
 const HISTORY_LAYER_PREFIX = "fire-risk-hist-lyr-";
 const FIRE_REQUEST_TIMEOUT_MS = 12000;
@@ -339,26 +346,59 @@ function getUsableTemporaryTileTemplate(value, generatedAt) {
 
 function getFireDistrictTiles(source) {
   const districts = Array.isArray(source?.districts) ? source.districts : [];
-  return districts
-    .map((district) => {
-      const rawUrl =
-        district?.tileUrl ??
-        district?.tile_url ??
-        district?.geeTileUrl ??
-        district?.gee_tile_url ??
-        null;
-      const generatedAt =
-        district?.tileGeneratedAt ??
-        district?.tile_generated_at ??
-        district?.geeGeneratedAt ??
-        district?.gee_generated_at ??
-        null;
-      return {
-        url: getUsableTemporaryTileTemplate(rawUrl, generatedAt),
-        generatedAt,
-      };
-    })
-    .filter((tile) => tile.url);
+  const tiles = new Map();
+
+  for (const district of districts) {
+    const code = String(
+      district?.districtCode ??
+        district?.district_code ??
+        district?.unitCode ??
+        district?.unit_code ??
+        "",
+    ).trim();
+    if (!code || tiles.has(code)) continue;
+
+    const geoserverLayer = getFireGeoServerLayers({
+      districts: [district],
+    })[0];
+    let geoserverTileUrl = null;
+    if (geoserverLayer) {
+      try {
+        const candidate = buildWmsTileUrl({
+          geoserver_layer: geoserverLayer,
+        });
+        if (isValidHttpTileTemplate(candidate)) {
+          geoserverTileUrl = candidate;
+        }
+      } catch {
+        geoserverTileUrl = null;
+      }
+    }
+
+    const rawUrl =
+      district?.tileUrl ??
+      district?.tile_url ??
+      district?.geeTileUrl ??
+      district?.gee_tile_url ??
+      null;
+    const generatedAt =
+      district?.tileGeneratedAt ??
+      district?.tile_generated_at ??
+      district?.geeGeneratedAt ??
+      district?.gee_generated_at ??
+      null;
+    const temporaryTileUrl = getUsableTemporaryTileTemplate(rawUrl, generatedAt);
+    const tileUrl = geoserverTileUrl || temporaryTileUrl;
+    if (!tileUrl) continue;
+
+    tiles.set(code, {
+      code,
+      tileUrl,
+      source: geoserverTileUrl ? "geoserver" : "gee",
+    });
+  }
+
+  return Array.from(tiles.values());
 }
 
 function toStableFireDistrictRaster(source, fallback) {
@@ -652,9 +692,8 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
     districts,
     hasDistrictScope: districts.length > 0 || districtGeomByCode.size > 0,
     geoserverLayer: snap?.geoserverLayer ?? null,
-    // Ảnh xem nhanh cấp tỉnh chỉ dùng cho snapshot legacy không có dữ liệu
-    // huyện. Khi đã có scope huyện, client chờ đúng bộ raster huyện để tránh
-    // phủ nhầm toàn tỉnh.
+    // Ảnh xem nhanh cấp tỉnh được ưu tiên khi còn hiệu lực để bản đồ hiện ngay
+    // bằng một nguồn duy nhất. Bộ ảnh huyện ổn định là phương án dự phòng lâu dài.
     geeTileUrl: snap?.geeTileUrl ?? snap?.gee_tile_url ?? null,
     geeTileGeneratedAt:
       snap?.geeTileGeneratedAt ?? snap?.gee_tile_generated_at ?? null,
@@ -678,10 +717,27 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
 // ── Map layer helpers ────────────────────────────────────────────────────────
 
 function removeFireLayers(map) {
-  [FIRE_DIST_LINE, FIRE_DIST_FILL, FIRE_RASTER_LAYER].forEach((id) => {
+  const style = map.getStyle?.();
+  const districtRasterLayerIds = (style?.layers || [])
+    .map((layer) => layer.id)
+    .filter((id) => id.startsWith(FIRE_DISTRICT_RASTER_LAYER_PREFIX));
+  const districtRasterSourceIds = Object.keys(style?.sources || {}).filter((id) =>
+    id.startsWith(FIRE_DISTRICT_RASTER_SOURCE_PREFIX),
+  );
+
+  [
+    FIRE_DIST_LINE,
+    FIRE_DIST_FILL,
+    FIRE_RASTER_LAYER,
+    ...districtRasterLayerIds,
+  ].forEach((id) => {
     if (map.getLayer(id)) map.removeLayer(id);
   });
-  [FIRE_SOURCE_DIST, FIRE_RASTER_SOURCE].forEach((id) => {
+  [
+    FIRE_SOURCE_DIST,
+    FIRE_RASTER_SOURCE,
+    ...districtRasterSourceIds,
+  ].forEach((id) => {
     if (map.getSource(id)) map.removeSource(id);
   });
 }
@@ -715,12 +771,119 @@ function ensureRasterLayer(map, tileUrl) {
     });
   }
   if (!map.getLayer(FIRE_RASTER_LAYER)) {
-    map.addLayer({
-      id: FIRE_RASTER_LAYER,
-      type: "raster",
-      source: FIRE_RASTER_SOURCE,
-    });
+    map.addLayer(
+      {
+        id: FIRE_RASTER_LAYER,
+        type: "raster",
+        source: FIRE_RASTER_SOURCE,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+          ktGeometryType: "raster",
+          ktManagedOverlay: true,
+        },
+      },
+      getRasterLayerBeforeId(map, FIRE_RASTER_LAYER),
+    );
+  } else {
+    const beforeId = getRasterLayerBeforeId(map, FIRE_RASTER_LAYER);
+    if (beforeId) map.moveLayer(FIRE_RASTER_LAYER, beforeId);
   }
+}
+
+function getDistrictRasterIds(code) {
+  const key = String(code || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  return {
+    sourceId: `${FIRE_DISTRICT_RASTER_SOURCE_PREFIX}${key}`,
+    layerId: `${FIRE_DISTRICT_RASTER_LAYER_PREFIX}${key}`,
+  };
+}
+
+function removeProvinceRasterLayer(map) {
+  if (map.getLayer(FIRE_RASTER_LAYER)) map.removeLayer(FIRE_RASTER_LAYER);
+  if (map.getSource(FIRE_RASTER_SOURCE)) map.removeSource(FIRE_RASTER_SOURCE);
+}
+
+function removeDistrictRasterLayer(map, sourceId, layerId) {
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+}
+
+function syncDistrictRasterLayers(map, districtTiles) {
+  const wantedSourceIds = new Set();
+  const wantedLayerIds = new Set();
+
+  for (const tile of districtTiles) {
+    if (!tile?.code || !tile?.tileUrl) continue;
+    const { sourceId, layerId } = getDistrictRasterIds(tile.code);
+    wantedSourceIds.add(sourceId);
+    wantedLayerIds.add(layerId);
+
+    const source = map.getSource(sourceId);
+    if (source && source.tiles?.[0] !== tile.tileUrl) {
+      removeDistrictRasterLayer(map, sourceId, layerId);
+    }
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: "raster",
+        tiles: [tile.tileUrl],
+        tileSize: 256,
+        attribution: "Dữ liệu cảnh báo cháy rừng theo huyện",
+      });
+    }
+    if (!map.getLayer(layerId)) {
+      map.addLayer(
+        {
+          id: layerId,
+          type: "raster",
+          source: sourceId,
+          metadata: {
+            ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+            ktGeometryType: "raster",
+            ktManagedOverlay: true,
+            districtCode: tile.code,
+          },
+        },
+        getRasterLayerBeforeId(map, layerId),
+      );
+    } else {
+      const beforeId = getRasterLayerBeforeId(map, layerId);
+      if (beforeId) map.moveLayer(layerId, beforeId);
+    }
+  }
+
+  const style = map.getStyle?.();
+  const staleLayerIds = (style?.layers || [])
+    .map((layer) => layer.id)
+    .filter(
+      (id) =>
+        id.startsWith(FIRE_DISTRICT_RASTER_LAYER_PREFIX) &&
+        !wantedLayerIds.has(id),
+    );
+  for (const layerId of staleLayerIds) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+  }
+
+  const staleSourceIds = Object.keys(style?.sources || {}).filter(
+    (id) =>
+      id.startsWith(FIRE_DISTRICT_RASTER_SOURCE_PREFIX) &&
+      !wantedSourceIds.has(id),
+  );
+  for (const sourceId of staleSourceIds) {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
+}
+
+function removeAllDistrictRasterLayers(map) {
+  syncDistrictRasterLayers(map, []);
+}
+
+function forEachCurrentRasterLayer(map, callback) {
+  if (map.getLayer(FIRE_RASTER_LAYER)) callback(FIRE_RASTER_LAYER);
+
+  const districtLayerIds = (map.getStyle?.()?.layers || [])
+    .map((layer) => layer.id)
+    .filter((id) => id.startsWith(FIRE_DISTRICT_RASTER_LAYER_PREFIX));
+  for (const layerId of districtLayerIds) callback(layerId);
 }
 
 function ensureDistrictLayer(map, featureCollection) {
@@ -741,26 +904,48 @@ function ensureDistrictLayer(map, featureCollection) {
     });
   }
   if (!map.getLayer(FIRE_DIST_FILL)) {
-    map.addLayer({
-      id: FIRE_DIST_FILL,
-      type: "fill",
-      source: FIRE_SOURCE_DIST,
-      paint: {
-        "fill-color": ["get", "color"],
-        // opacity set qua setPaintProperty riêng (effect opacity).
+    map.addLayer(
+      {
+        id: FIRE_DIST_FILL,
+        type: "fill",
+        source: FIRE_SOURCE_DIST,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.POLYGON,
+          ktGeometryType: "polygon",
+          ktManagedOverlay: true,
+        },
+        paint: {
+          "fill-color": ["get", "color"],
+          // opacity set qua setPaintProperty riêng (effect opacity).
+        },
       },
-    });
+      getDataLayerBeforeId(map, "polygon", FIRE_DIST_FILL),
+    );
+  } else {
+    const beforeId = getDataLayerBeforeId(map, "polygon", FIRE_DIST_FILL);
+    if (beforeId) map.moveLayer(FIRE_DIST_FILL, beforeId);
   }
   if (!map.getLayer(FIRE_DIST_LINE)) {
-    map.addLayer({
-      id: FIRE_DIST_LINE,
-      type: "line",
-      source: FIRE_SOURCE_DIST,
-      paint: {
-        "line-color": ["get", "color"],
-        "line-width": 1.8,
+    map.addLayer(
+      {
+        id: FIRE_DIST_LINE,
+        type: "line",
+        source: FIRE_SOURCE_DIST,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.LINE,
+          ktGeometryType: "line",
+          ktManagedOverlay: true,
+        },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 1.8,
+        },
       },
-    });
+      getDataLayerBeforeId(map, "line", FIRE_DIST_LINE),
+    );
+  } else {
+    const beforeId = getDataLayerBeforeId(map, "line", FIRE_DIST_LINE);
+    if (beforeId) map.moveLayer(FIRE_DIST_LINE, beforeId);
   }
 }
 
@@ -792,21 +977,26 @@ function ensureHistoryRasterLayer(map, id, tileUrl, opacity, visible) {
     });
   }
   if (!map.getLayer(lyrId)) {
-    // Chèn dưới district fill để boundary luôn nằm trên, dễ đọc.
-    const beforeId = map.getLayer(FIRE_DIST_FILL) ? FIRE_DIST_FILL : undefined;
     map.addLayer(
       {
         id: lyrId,
         type: "raster",
         source: srcId,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+          ktGeometryType: "raster",
+          ktManagedOverlay: true,
+        },
         paint: { "raster-opacity": opacity },
         layout: { visibility: visible ? "visible" : "none" },
       },
-      beforeId,
+      getRasterLayerBeforeId(map, lyrId),
     );
   } else {
     map.setPaintProperty(lyrId, "raster-opacity", opacity);
     map.setLayoutProperty(lyrId, "visibility", visible ? "visible" : "none");
+    const beforeId = getRasterLayerBeforeId(map, lyrId);
+    if (beforeId) map.moveLayer(lyrId, beforeId);
   }
 }
 
@@ -845,6 +1035,7 @@ export function MonitoringAndAlerting() {
 
   const [view, setView] = useState(null); // extractProvinceView() output
   const [rasterTileUrl, setRasterTileUrl] = useState(null);
+  const [districtRasterTiles, setDistrictRasterTiles] = useState([]);
   const [rasterSource, setRasterSource] = useState(null);
   const [districtRasterReadiness, setDistrictRasterReadiness] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -911,13 +1102,27 @@ export function MonitoringAndAlerting() {
           const raster = toStableFireDistrictRaster(payload);
           setDistrictRasterReadiness(raster);
 
-          if (raster.stable) {
-            setRasterTileUrl(raster.tileUrl);
-            setRasterSource("geoserver");
+          if (raster.districtTiles.length > 0) {
+            setDistrictRasterTiles(raster.districtTiles);
+            setRasterTileUrl(null);
+            setRasterSource("districts");
+            if (raster.stable) {
+              stopDistrictPoll();
+              return;
+            }
+          } else if (raster.stable) {
+            const previewTileUrl = getUsableTemporaryTileTemplate(
+              snapshot?.geeTileUrl ?? snapshot?.gee_tile_url,
+              snapshot?.geeTileGeneratedAt ?? snapshot?.gee_tile_generated_at,
+            );
+            setDistrictRasterTiles([]);
+            setRasterTileUrl(previewTileUrl || raster.tileUrl);
+            setRasterSource(previewTileUrl ? "province" : "geoserver");
             stopDistrictPoll();
             return;
           }
-          if (raster.hasDistrictScope) {
+          if (raster.hasDistrictScope && raster.districtTiles.length === 0) {
+            setDistrictRasterTiles([]);
             setRasterTileUrl(null);
             setRasterSource(null);
           }
@@ -949,6 +1154,7 @@ export function MonitoringAndAlerting() {
     setHistoryLayers({});
     setLayerVisible((current) => ({ ...current, heat: true }));
     setRasterTileUrl(null);
+    setDistrictRasterTiles([]);
     setRasterSource(null);
     setDistrictRasterReadiness(null);
 
@@ -1005,13 +1211,20 @@ export function MonitoringAndAlerting() {
           const districtPayload = districtRes?.data ?? districtRes;
           const raster = toStableFireDistrictRaster(districtPayload);
           setDistrictRasterReadiness(raster);
-          if (raster.stable) {
-            setRasterTileUrl(raster.tileUrl);
-            setRasterSource("geoserver");
+          if (raster.districtTiles.length > 0) {
+            setDistrictRasterTiles(raster.districtTiles);
+            setRasterTileUrl(null);
+            setRasterSource("districts");
+            if (!raster.stable) startDistrictPoll(nextView.snapshot);
+          } else if (raster.stable) {
+            setDistrictRasterTiles([]);
+            setRasterTileUrl(provincePreviewUrl || raster.tileUrl);
+            setRasterSource(provincePreviewUrl ? "province" : "geoserver");
           } else {
             // Có scope huyện nhưng batch chưa đủ/lỗi: để trống raster hiện tại,
             // tuyệt đối không thay bằng ảnh preview toàn tỉnh.
             if (!raster.hasDistrictScope && !nextView.hasDistrictScope) {
+              setDistrictRasterTiles([]);
               setRasterTileUrl(provincePreviewUrl);
               setRasterSource(provincePreviewUrl ? "province" : null);
             }
@@ -1020,6 +1233,7 @@ export function MonitoringAndAlerting() {
         } catch {
           if (requestAbortRef.current === controller) {
             if (!nextView.hasDistrictScope) {
+              setDistrictRasterTiles([]);
               setRasterTileUrl(provincePreviewUrl);
               setRasterSource(provincePreviewUrl ? "province" : null);
             }
@@ -1027,6 +1241,7 @@ export function MonitoringAndAlerting() {
           }
         }
       } else if (!nextView.hasDistrictScope) {
+        setDistrictRasterTiles([]);
         setRasterTileUrl(provincePreviewUrl);
         setRasterSource(provincePreviewUrl ? "province" : null);
       }
@@ -1159,9 +1374,14 @@ export function MonitoringAndAlerting() {
   const currentSnapshotId = view?.snapshot?.id
     ? String(view.snapshot.id)
     : null;
+  const currentPreviewTileUrl = getUsableTemporaryTileTemplate(
+    view?.geeTileUrl,
+    view?.geeTileGeneratedAt,
+  );
 
   useEffect(() => {
     if (!currentSnapshotId) return;
+    if (districtRasterTiles.length > 0) return;
     const publishedCurrent = historyItems.find(
       (item) => item.id === currentSnapshotId,
     );
@@ -1170,10 +1390,16 @@ export function MonitoringAndAlerting() {
     const raster = toStableFireDistrictRaster(publishedCurrent);
     if (!raster.stable) return;
     setDistrictRasterReadiness(raster);
-    setRasterTileUrl(raster.tileUrl);
-    setRasterSource("geoserver");
+    setRasterTileUrl(currentPreviewTileUrl || raster.tileUrl);
+    setRasterSource(currentPreviewTileUrl ? "province" : "geoserver");
     stopDistrictPoll();
-  }, [currentSnapshotId, historyItems, stopDistrictPoll]);
+  }, [
+    currentPreviewTileUrl,
+    currentSnapshotId,
+    districtRasterTiles.length,
+    historyItems,
+    stopDistrictPoll,
+  ]);
 
   // Danh sách cấp thực sự có diện tích — chỉ hiện các cấp > 0 trong dropdown.
   const levelsWithArea = useMemo(() => {
@@ -1208,36 +1434,51 @@ export function MonitoringAndAlerting() {
     if (!mapInstance || !view) return;
 
     const setup = () => {
-      ensureRasterLayer(mapInstance, rasterTileUrl);
+      if (districtRasterTiles.length > 0) {
+        removeProvinceRasterLayer(mapInstance);
+        syncDistrictRasterLayers(mapInstance, districtRasterTiles);
+      } else {
+        removeAllDistrictRasterLayers(mapInstance);
+        if (rasterTileUrl) ensureRasterLayer(mapInstance, rasterTileUrl);
+        else removeProvinceRasterLayer(mapInstance);
+      }
       ensureDistrictLayer(mapInstance, view.districtFeatureCollection);
     };
 
     if (mapInstance.isStyleLoaded?.()) setup();
     else mapInstance.once("load", setup);
-  }, [mapInstance, view, rasterTileUrl]);
+  }, [districtRasterTiles, mapInstance, view, rasterTileUrl]);
 
   // Effect B — Visibility toggle. Không tear-down source/layer, chỉ set
   // `layout.visibility=visible|none`. Toggle không nháy, không refetch tile.
   useEffect(() => {
     if (!mapInstance) return;
-    setLayerVisibilityOnMap(
-      mapInstance,
-      FIRE_RASTER_LAYER,
-      layerVisible.heat && Boolean(rasterTileUrl),
-    );
+    const hasRaster =
+      Boolean(rasterTileUrl) || districtRasterTiles.length > 0;
+    forEachCurrentRasterLayer(mapInstance, (layerId) => {
+      setLayerVisibilityOnMap(
+        mapInstance,
+        layerId,
+        layerVisible.heat && hasRaster,
+      );
+    });
     setLayerVisibilityOnMap(mapInstance, FIRE_DIST_FILL, layerVisible.district);
     setLayerVisibilityOnMap(mapInstance, FIRE_DIST_LINE, layerVisible.district);
-  }, [mapInstance, layerVisible, rasterTileUrl, view]);
+  }, [
+    districtRasterTiles.length,
+    mapInstance,
+    layerVisible,
+    rasterTileUrl,
+    view,
+  ]);
 
-  // Effect C — Raster opacity. Chỉ setPaint raster layer.
+  // Effect C — Raster opacity. Áp dụng cho lớp tỉnh hoặc toàn bộ lớp huyện.
   useEffect(() => {
-    if (!mapInstance || !mapInstance.getLayer(FIRE_RASTER_LAYER)) return;
-    mapInstance.setPaintProperty(
-      FIRE_RASTER_LAYER,
-      "raster-opacity",
-      heatOpacity,
-    );
-  }, [mapInstance, heatOpacity, rasterTileUrl]);
+    if (!mapInstance) return;
+    forEachCurrentRasterLayer(mapInstance, (layerId) => {
+      mapInstance.setPaintProperty(layerId, "raster-opacity", heatOpacity);
+    });
+  }, [districtRasterTiles.length, mapInstance, heatOpacity, rasterTileUrl]);
 
   // Effect D — District opacity. Chỉ setPaint district fill.
   useEffect(() => {
@@ -1534,7 +1775,6 @@ export function MonitoringAndAlerting() {
                 rasterSource === "province" ? view.geeDownloadUrl : null
               }
               geeDownloadFilename={view.geeDownloadFilename}
-              rasterSource={rasterSource}
               districtRasterReadiness={districtRasterReadiness}
               layerVisible={layerVisible}
               onLayerToggle={(id) =>
@@ -1653,7 +1893,6 @@ function FireRiskLayerManager({
   hasDistrictGeometry,
   geeDownloadUrl,
   geeDownloadFilename,
-  rasterSource,
   districtRasterReadiness,
   layerVisible,
   onLayerToggle,
@@ -1670,7 +1909,9 @@ function FireRiskLayerManager({
   const readyCount = districtRasterReadiness?.ready ?? 0;
   const totalDistricts = districtRasterReadiness?.total ?? 0;
   const districtProgress =
-    totalDistricts > 0 ? `${readyCount}/${totalDistricts} huyện` : null;
+    totalDistricts > 0
+      ? `${readyCount}/${totalDistricts} huyện đã có ảnh chi tiết`
+      : null;
 
   // Ranh giới chỉ xuất hiện khi API thực sự trả geometry có tọa độ. Raster
   // nguy cơ và các lớp lịch sử vẫn hoạt động độc lập.
@@ -1693,6 +1934,7 @@ function FireRiskLayerManager({
     {
       id: "heat",
       label: "Bản đồ nhiệt cảnh báo cháy rừng",
+      description: districtProgress,
       dot: "bg-orange-500",
       visible: layerVisible.heat,
       opacity: heatOpacity,
@@ -1779,6 +2021,9 @@ function FireRiskLayerRow({ row }) {
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-72">
             <p className="font-semibold">{row.label}</p>
+            {row.description && (
+              <p className="mt-0.5 text-xs">{row.description}</p>
+            )}
           </TooltipContent>
         </Tooltip>
         <Button

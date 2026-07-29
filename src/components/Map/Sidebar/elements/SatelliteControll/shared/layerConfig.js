@@ -2,12 +2,10 @@ import {
   getRgbComposite,
   getNdvi,
   getHeatmap,
-  getClassified,
 } from "@/features/map/api/satelliteApi";
 
 /**
  * Shared layer configuration for both SingleMode and CompareMode.
- * CompareMode uses rgb, ndvi, heatmap only (no classified).
  */
 export const LAYER_CONFIG = {
   rgb: {
@@ -30,13 +28,6 @@ export const LAYER_CONFIG = {
     service: getHeatmap,
     description: "Nhiệt độ bề mặt (LST)",
     supportCompare: true,
-  },
-  classified: {
-    label: "Ảnh Phân Loại",
-    color: "bg-orange-500",
-    service: getClassified,
-    description: "Phân loại lớp phủ (11 lớp)",
-    supportCompare: false,
   },
 };
 

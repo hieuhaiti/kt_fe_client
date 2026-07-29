@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Settings,
   Calendar,
+  Info,
 } from "lucide-react";
 import LoadingInline from "@/components/common/LoadingInline";
 import { Button } from "@/components/ui/button";
@@ -172,6 +173,21 @@ function ConfigPanel() {
     clearPeriodData,
   ]);
 
+  const applySamePeriodLastYear = () => {
+    const previousStart = new Date(startDate1);
+    previousStart.setFullYear(previousStart.getFullYear() - 1);
+    const previousEnd = new Date(endDate1);
+    previousEnd.setFullYear(previousEnd.getFullYear() - 1);
+    setStartDate2(previousStart);
+    setEndDate2(previousEnd);
+    setError(null);
+  };
+  const period1Days = Math.round((endDate1 - startDate1) / 86_400_000);
+  const period2Days = Math.round((endDate2 - startDate2) / 86_400_000);
+  const sameSeason =
+    startDate1.getMonth() === startDate2.getMonth() &&
+    endDate1.getMonth() === endDate2.getMonth();
+
   return (
     <div className="bg-card">
       {/* Header - always visible */}
@@ -304,6 +320,38 @@ function ConfigPanel() {
                 </div>
               </div>
             </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={applySamePeriodLastYear}
+              disabled={isLoading}
+              className="w-full"
+            >
+              Đặt kỳ đối chiếu cùng thời gian năm trước
+            </Button>
+
+            <aside
+              role="note"
+              className={`rounded-lg border p-2.5 text-[11px] leading-relaxed ${
+                sameSeason && period1Days === period2Days
+                  ? "border-success/30 bg-success/10 text-success-foreground"
+                  : "border-warning/30 bg-warning/10 text-warning-foreground"
+              }`}
+            >
+              <p className="flex items-center gap-1.5 font-semibold">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                {sameSeason && period1Days === period2Days
+                  ? "Hai khoảng thời gian tương đồng"
+                  : "Nên chọn cùng mùa và cùng số ngày"}
+              </p>
+              <p className="mt-1">
+                So sánh cùng thời gian giữa hai năm giúp giảm chênh lệch tự
+                nhiên do mùa. Mây và số lượng ảnh khác nhau vẫn có thể làm màu
+                sắc hoặc chỉ số thay đổi.
+              </p>
+            </aside>
           </div>
 
           {/* Layer Types */}

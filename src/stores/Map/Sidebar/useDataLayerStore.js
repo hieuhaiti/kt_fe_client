@@ -44,8 +44,10 @@ export const useDataLayerStore = create((set, get) => ({
       const mappedLayers = newLayers.map((layer, index) => {
         const id = layer.code || layer.id;
         const existing = currentLayers.find((item) => item.id === id);
+        const layerKind = layer.layer_kind === "basemap" ? "basemap" : "overlay";
         const isDefaultEnabled =
           !!layer.is_enable_default || !!layer.default_style?.visible_by_default;
+        const initialEnabled = layerKind === "basemap" ? true : isDefaultEnabled;
 
         return {
           id,
@@ -53,6 +55,7 @@ export const useDataLayerStore = create((set, get) => ({
           name: layer.name_vi || layer.name_en || layer.name || layer.code,
           description: layer.description_vi || layer.description_en || "",
           category: layer.category || "",
+          layer_kind: layerKind,
           layer_group: layer.layer_group || "",
           geometry_type: layer.geometry_type,
           geoserver_layer: layer.geoserver_layer,
@@ -69,7 +72,7 @@ export const useDataLayerStore = create((set, get) => ({
           is_public: layer.is_public,
           sort_order: layer.sort_order ?? index,
           is_enable_default: isDefaultEnabled,
-          enabled: existing ? existing.enabled : isDefaultEnabled,
+          enabled: existing ? existing.enabled : initialEnabled,
         };
       });
 

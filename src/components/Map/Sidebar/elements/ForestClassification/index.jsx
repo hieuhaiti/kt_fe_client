@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Eye,
   EyeOff,
@@ -30,6 +31,8 @@ import {
   getForestClassificationPublishedHistory,
   getForestClassificationSnapshot,
 } from "@/features/map/api/forestClassificationApi";
+import { GEOSERVER_LAYER_ORDER_PRIORITY } from "@/constant/geoserverData";
+import { getRasterLayerBeforeId } from "@/helper/Map/MapHelper";
 import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 import { useMapStore } from "@/stores/Map/useMapStore";
 
@@ -102,8 +105,13 @@ const MONTHS = [
 
 function formatArea(ha) {
   if (ha == null) return "—";
-  if (Math.abs(ha) >= 10000) return `${(ha / 10000).toFixed(1)} vạn ha`;
-  return `${ha.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} ha`;
+  // Từ 100 ha trở lên đổi sang km² (1 km² = 100 ha) — dễ đối chiếu với diện tích
+  // hành chính tính theo km² hơn là "vạn ha".
+  if (Math.abs(ha) >= 100) {
+    const km2 = ha / 100;
+    return `${km2.toLocaleString("vi-VN", { maximumFractionDigits: 2 })} km²`;
+  }
+  return `${ha.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} ha`;
 }
 
 function formatAreaChange(metric) {
@@ -155,12 +163,208 @@ function ClassRow({ classId, name, areaHa, totalHa }) {
   );
 }
 
-function ComparisonCard({ comparison }) {
+function formatPeriodLabel(period) {
+  if (!period) return "—";
+  return `${String(period.month).padStart(2, "0")}/${period.year}`;
+}
+
+function getPeriodOrdinal(period) {
+  return Number(period?.year) * 12 + Number(period?.month) - 1;
+}
+
+function getForestAnalysisWindow(period) {
+  const endExclusive = new Date(
+    Date.UTC(Number(period.year), Number(period.month), 1),
+  );
+  const start = new Date(endExclusive);
+  start.setUTCMonth(start.getUTCMonth() - 12);
+  const end = new Date(endExclusive);
+  end.setUTCDate(end.getUTCDate() - 1);
+  const formatDate = (date) =>
+    new Intl.DateTimeFormat("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date);
+
+  return {
+    start,
+    end,
+    label: `${formatDate(start)}–${formatDate(end)}`,
+  };
+}
+
+function findRecommendedReferencePeriod(periods, current) {
+  if (!current) return null;
+
+  const sameMonthLastYear = periods.find(
+    (item) =>
+      Number(item.year) === Number(current.year) - 1 &&
+      Number(item.month) === Number(current.month),
+  );
+  if (sameMonthLastYear) return sameMonthLastYear;
+
+  const currentOrdinal = getPeriodOrdinal(current);
+  return (
+    periods
+      .filter((item) => getPeriodOrdinal(item) < currentOrdinal)
+      .sort(
+        (first, second) => getPeriodOrdinal(second) - getPeriodOrdinal(first),
+      )[0] ??
+    periods.find((item) => String(item.id) !== String(current.id)) ??
+    null
+  );
+}
+
+function createAreaComparison(currentHa, previousHa) {
+  const deltaHa = currentHa - previousHa;
+  return {
+    currentHa,
+    previousHa,
+    deltaHa,
+    changePct: previousHa > 0 ? (deltaHa / previousHa) * 100 : null,
+  };
+}
+
+function buildPeriodComparison(current, reference) {
+  if (!current || !reference || String(current.id) === String(reference.id)) {
+    return null;
+  }
+
+  const currentAreas = normalizeProvinceSummary(
+    current.provinceSummary ?? current.province_summary,
+  );
+  const referenceAreas = normalizeProvinceSummary(
+    reference.provinceSummary ?? reference.province_summary,
+  );
+  const currentByClass = new Map(
+    currentAreas.map((item) => [
+      Number(item.class_id),
+      Number(item.area_ha) || 0,
+    ]),
+  );
+  const referenceByClass = new Map(
+    referenceAreas.map((item) => [
+      Number(item.class_id),
+      Number(item.area_ha) || 0,
+    ]),
+  );
+  const sumArea = (byClass, classIds = CLASS_NAMES.map((_, index) => index)) =>
+    classIds.reduce((sum, classId) => sum + (byClass.get(classId) || 0), 0);
+
+  return {
+    previousSnapshot: {
+      id: reference.id,
+      year: Number(reference.year),
+      month: Number(reference.month),
+    },
+    province: {
+      total: createAreaComparison(
+        sumArea(currentByClass),
+        sumArea(referenceByClass),
+      ),
+      forest: createAreaComparison(
+        sumArea(currentByClass, FOREST_CLASS_IDS),
+        sumArea(referenceByClass, FOREST_CLASS_IDS),
+      ),
+      classes: CLASS_NAMES.map((className, classId) => ({
+        classId,
+        className,
+        ...createAreaComparison(
+          currentByClass.get(classId) || 0,
+          referenceByClass.get(classId) || 0,
+        ),
+      })),
+    },
+    districts: [],
+  };
+}
+
+function ComparisonPeriodNotice({ current, reference }) {
+  const [open, setOpen] = useState(false);
+
+  if (!current || !reference) return null;
+
+  const distance = Math.abs(
+    getPeriodOrdinal(current) - getPeriodOrdinal(reference),
+  );
+  const overlapMonths = Math.max(0, 12 - distance);
+  const sameMonth = Number(current.month) === Number(reference.month);
+  const referenceIsNewer =
+    getPeriodOrdinal(reference) > getPeriodOrdinal(current);
+  const currentWindow = getForestAnalysisWindow(current);
+  const referenceWindow = getForestAnalysisWindow(reference);
+  let title = "Hai kỳ sử dụng các khoảng ảnh khác nhau";
+  let summary = "Nên ưu tiên cùng tháng giữa các năm";
+  let description =
+    "Nên ưu tiên cùng tháng giữa các năm để hạn chế chênh lệch do mùa.";
+  let tone = "border-warning/30 bg-warning/10 text-warning-foreground";
+
+  if (referenceIsNewer) {
+    title = "Kỳ đối chiếu đang mới hơn kỳ cần xem";
+    summary = "Nên đổi lại thứ tự hai kỳ";
+    description =
+      "Nên chọn một kỳ cũ hơn để chênh lệch được trình bày đúng chiều thời gian.";
+  } else if (sameMonth && distance >= 12) {
+    title = "So sánh cùng mùa — phù hợp hơn";
+    summary = `${formatPeriodLabel(reference)} → ${formatPeriodLabel(current)}`;
+    description =
+      "Hai kỳ cùng tháng giúp hạn chế khác biệt tự nhiên giữa mùa mưa, mùa khô và giai đoạn cây thay lá.";
+    tone = "border-success/30 bg-success/10 text-success-foreground";
+  } else if (overlapMonths > 0) {
+    title = "Hai kỳ dùng chung";
+    summary = `${overlapMonths}/12 tháng dữ liệu`;
+    description =
+      "Chênh lệch phù hợp để theo dõi xu hướng, không đại diện cho biến động chỉ xảy ra trong riêng hai tháng.";
+  }
+
+  return (
+    <div className={`overflow-hidden rounded-lg border ${tone}`}>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        aria-expanded={open}
+        className="h-auto w-full justify-start rounded-none px-3 py-2 text-left hover:bg-muted/30"
+      >
+        <GitCompareArrows className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] font-semibold">{title}</span>
+          <span className="block truncate text-[10px] font-normal opacity-80">
+            {summary}
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </Button>
+      {open && (
+        <div className="space-y-1.5 border-t border-border/50 px-3 py-2 text-[11px]">
+          <p className="leading-relaxed">{description}</p>
+          <div className="space-y-0.5 text-[10px] opacity-80">
+            <p>
+              {formatPeriodLabel(current)}: {currentWindow.label}
+            </p>
+            <p>
+              {formatPeriodLabel(reference)}: {referenceWindow.label}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComparisonCard({ comparison, currentSnapshot }) {
   const previous = comparison?.previousSnapshot;
   const province = comparison?.province;
   if (!previous || !province) return null;
 
-  const previousPeriod = `${String(previous.month).padStart(2, "0")}/${previous.year}`;
+  const previousPeriod = formatPeriodLabel(previous);
+  const currentPeriod = formatPeriodLabel(currentSnapshot);
   const topChanges = [...(province.classes || [])]
     .filter((item) => Number(item.deltaHa) !== 0)
     .sort((a, b) => Math.abs(Number(b.deltaHa)) - Math.abs(Number(a.deltaHa)))
@@ -172,10 +376,10 @@ function ComparisonCard({ comparison }) {
         <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-sm">
           <span className="flex min-w-0 items-center gap-1.5">
             <GitCompareArrows className="h-4 w-4 shrink-0 text-primary" />
-            <span className="truncate">So sánh kỳ gần nhất </span>
+            <span className="truncate">So sánh số liệu</span>
           </span>
           <Badge variant="outline" className="shrink-0 font-mono text-[10px]">
-            {previousPeriod}
+            {previousPeriod} → {currentPeriod}
           </Badge>
         </CardTitle>
       </CardHeader>
@@ -557,13 +761,21 @@ function ensureForestRasterLayer(map, item) {
     source.setTiles([item.tileUrl]);
   }
   if (!map.getLayer(layerId)) {
-    map.addLayer({
-      id: layerId,
-      type: "raster",
-      source: sourceId,
-      paint: { "raster-opacity": item.opacity },
-      layout: { visibility: item.visible ? "visible" : "none" },
-    });
+    map.addLayer(
+      {
+        id: layerId,
+        type: "raster",
+        source: sourceId,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+          ktGeometryType: "raster",
+          ktManagedOverlay: true,
+        },
+        paint: { "raster-opacity": item.opacity },
+        layout: { visibility: item.visible ? "visible" : "none" },
+      },
+      getRasterLayerBeforeId(map, layerId),
+    );
   } else {
     map.setPaintProperty(layerId, "raster-opacity", item.opacity);
     map.setLayoutProperty(
@@ -571,6 +783,8 @@ function ensureForestRasterLayer(map, item) {
       "visibility",
       item.visible ? "visible" : "none",
     );
+    const beforeId = getRasterLayerBeforeId(map, layerId);
+    if (beforeId) map.moveLayer(layerId, beforeId);
   }
 }
 
@@ -602,6 +816,10 @@ export function ForestClassification() {
   const [districtLayerLoading, setDistrictLayerLoading] = useState(false);
   const [districtLayerError, setDistrictLayerError] = useState(null);
   const [infoExpanded, setInfoExpanded] = useState(false);
+  const [comparisonReferenceId, setComparisonReferenceId] = useState("");
+  const [comparisonSnapshot, setComparisonSnapshot] = useState(null);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [comparisonError, setComparisonError] = useState(null);
 
   const pollRef = useRef({
     timer: null,
@@ -614,6 +832,9 @@ export function ForestClassification() {
     requestId: 0,
     controller: null,
   });
+  const publishedHistoryRef = useRef(publishedHistory);
+  publishedHistoryRef.current = publishedHistory;
+  const comparisonCurrentIdRef = useRef("");
 
   const activatePublishedLayer = useCallback((item, districtPayload) => {
     const readiness = toDistrictReadiness(item, districtPayload);
@@ -891,6 +1112,81 @@ export function ForestClassification() {
   ]);
 
   useEffect(() => {
+    if (!selectedPublishedId || publishedHistory.length < 2) {
+      setComparisonReferenceId("");
+      return;
+    }
+    const current = publishedHistory.find(
+      (item) => String(item.id) === selectedPublishedId,
+    );
+    const recommended = findRecommendedReferencePeriod(
+      publishedHistory,
+      current,
+    );
+    const currentPeriodChanged =
+      comparisonCurrentIdRef.current !== selectedPublishedId;
+    comparisonCurrentIdRef.current = selectedPublishedId;
+    setComparisonReferenceId((currentReferenceId) => {
+      if (currentPeriodChanged) {
+        return recommended ? String(recommended.id) : "";
+      }
+      const currentReference = publishedHistory.find(
+        (item) => String(item.id) === currentReferenceId,
+      );
+      if (
+        currentReference &&
+        current &&
+        getPeriodOrdinal(currentReference) < getPeriodOrdinal(current)
+      ) {
+        return currentReferenceId;
+      }
+      return recommended ? String(recommended.id) : "";
+    });
+  }, [publishedHistory, selectedPublishedId]);
+
+  useEffect(() => {
+    if (!comparisonReferenceId) {
+      setComparisonSnapshot(null);
+      setComparisonError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const referencePeriod = publishedHistoryRef.current.find(
+      (item) => String(item.id) === comparisonReferenceId,
+    );
+    setComparisonLoading(true);
+    setComparisonError(null);
+    setComparisonSnapshot(null);
+
+    getForestClassificationSnapshot(comparisonReferenceId, {
+      signal: controller.signal,
+    })
+      .then((response) => {
+        const payload = response?.data?.data ?? response?.data ?? response;
+        const nextSnapshot = mergeSnapshotWithPublishedPeriod(
+          payload?.snapshot,
+          referencePeriod,
+        );
+        if (!nextSnapshot) {
+          throw new Error("Không tìm thấy số liệu của kỳ đối chiếu.");
+        }
+        setComparisonSnapshot(nextSnapshot);
+      })
+      .catch((requestError) => {
+        if (requestError?.name === "AbortError") return;
+        setComparisonError(
+          requestError?.message || "Không thể tải số liệu của kỳ đối chiếu.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setComparisonLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [comparisonReferenceId]);
+
+  useEffect(() => {
     if (!publishedHistory.length) return;
     const selectedExists = publishedHistory.some(
       (item) => String(item.id) === selectedPublishedId,
@@ -1051,7 +1347,18 @@ export function ForestClassification() {
   };
 
   const snapshot = data?.snapshot;
-  const comparison = data?.comparison ?? null;
+  const comparisonReferencePeriod = publishedHistory.find(
+    (item) => String(item.id) === comparisonReferenceId,
+  );
+  const comparison = buildPeriodComparison(snapshot, comparisonSnapshot);
+  const analysisWindow = snapshot ? getForestAnalysisWindow(snapshot) : null;
+  const availableReferencePeriods = snapshot
+    ? publishedHistory.filter(
+        (item) =>
+          String(item.id) !== String(snapshot.id) &&
+          getPeriodOrdinal(item) < getPeriodOrdinal(snapshot),
+      )
+    : [];
   const activeMapLayer = Object.values(mapLayers)[0] ?? null;
   const hasDistrictAggregateClasses =
     Object.keys(districtAggregate?.byClass ?? {}).length > 0;
@@ -1088,9 +1395,6 @@ export function ForestClassification() {
   const districtReadyCount = districtReadiness?.ready ?? 0;
   const districtTotalCount = districtReadiness?.total ?? 0;
   const allDistrictLayersReady = isDistrictReadinessComplete(districtReadiness);
-  const summaryScopeLabel = activeMapLayer
-    ? `${districtReadyCount}/${districtTotalCount || "—"} huyện`
-    : "toàn tỉnh";
 
   useEffect(() => {
     if (!mapInstance) return;
@@ -1132,7 +1436,7 @@ export function ForestClassification() {
           <div className="flex min-w-0 items-center gap-2">
             <TreePine className="h-5 w-5 shrink-0 text-success" />
             <h2 className="truncate text-base font-semibold text-foreground @[360px]/forest:text-lg">
-              Phân loại rừng
+              Phân loại lớp phủ rừng
             </h2>
           </div>
           <Button
@@ -1181,31 +1485,40 @@ export function ForestClassification() {
         {infoExpanded && (
           <ul className="text-foreground list-disc space-y-1 border-t border-info/20 px-3 pt-2 pb-3 pl-7">
             <li>
-              <b>Mô hình</b>: Random Forest.
+              <b>Ý nghĩa kỳ dữ liệu</b>: tháng được chọn là thời điểm kết quả
+              được cập nhật đến, không phải bản đồ chỉ dùng ảnh của riêng tháng
+              đó.
+            </li>
+            {snapshot && analysisWindow && (
+              <li>
+                <b>Khoảng ảnh sử dụng</b>: {analysisWindow.label}. Khoảng 12
+                tháng giúp quan sát đủ mùa xanh, mùa khô và giai đoạn cây thay
+                lá, đồng thời bổ sung những nơi bị mây che.
+              </li>
+            )}
+            <li>
+              <b>Thông tin gần nhất</b>: ba tháng cuối kỳ được dùng để phản ánh
+              tình trạng mới hơn.
             </li>
             <li>
-              <b>Nguồn dữ liệu</b>: Landsat 5/7/8/9 Collection 2 Level-2,
-              Sentinel-2 SR Harmonized và mô hình độ cao SRTM.
+              <b>Độ chi tiết</b>: mỗi điểm trên bản đồ đại diện cho khu vực
+              khoảng {districtReadiness?.scaleM ?? 150} ×{" "}
+              {districtReadiness?.scaleM ?? 150} m. Ranh giới và diện tích có
+              thể có sai số.
             </li>
             <li>
-              <b>Biến đầu vào</b>: 6 kênh phổ (Blue, Green, Red, NIR, SWIR1,
-              SWIR2), các chỉ số NDVI, NDWI, MNDWI, NDMI, NDBI, NBR, BSI, EVI,
-              biến động mùa khô/mưa và địa hình (độ cao, độ dốc, hướng dốc).
-            </li>
-            <li>
-              <b>Độ phân giải</b>: ảnh phân loại rừng xuất bản ở{" "}
-              {districtReadiness?.scaleM ?? 150}m. Ảnh nguồn có độ phân giải
-              10-20 m (Sentinel-2) và 30 m (Landsat/SRTM).
-            </li>
-            <li>
-              <b>Kết quả</b>: 11 nhóm lớp phủ, tổng hợp theo tháng.
+              <b>Khi so sánh</b>: nên ưu tiên cùng tháng giữa các năm. Hai tháng
+              liền nhau dùng chung phần lớn ảnh nên chỉ phù hợp theo dõi xu
+              hướng.
             </li>
           </ul>
         )}
       </div>
 
       <div className="h-fit shrink-0 space-y-1">
-        <label className="text-xs text-muted-foreground">Kỳ dữ liệu</label>
+        <label className="text-xs text-muted-foreground">
+          Kết quả cập nhật đến
+        </label>
         <Select
           value={selectedPublishedId}
           onValueChange={handlePublishedSnapshot}
@@ -1224,12 +1537,68 @@ export function ForestClassification() {
             {publishedHistory.map((item) => (
               <SelectItem key={item.id} value={String(item.id)}>
                 Tháng {String(item.month).padStart(2, "0")}/{item.year}
-                {item.districtLayerCount > 0}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
+
+      {snapshot && (
+        <div className="h-fit shrink-0 space-y-2 rounded-lg border border-border bg-card p-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-foreground">
+              Kỳ đối chiếu số liệu
+            </label>
+            <p className="text-[10px] leading-4 text-muted-foreground">
+              Bản đồ vẫn hiển thị kỳ đang xem. Chọn một kỳ cũ hơn để đối chiếu
+              diện tích.
+            </p>
+          </div>
+          <Select
+            value={comparisonReferenceId}
+            onValueChange={setComparisonReferenceId}
+            disabled={
+              querying ||
+              comparisonLoading ||
+              availableReferencePeriods.length === 0
+            }
+          >
+            <SelectTrigger className="h-8 w-full min-w-0 text-xs">
+              <SelectValue
+                placeholder={
+                  availableReferencePeriods.length > 0
+                    ? "Chọn kỳ đối chiếu"
+                    : "Chưa có kỳ cũ hơn"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {availableReferencePeriods.map((item) => (
+                <SelectItem key={item.id} value={String(item.id)}>
+                  Tháng {String(item.month).padStart(2, "0")}/{item.year}
+                  {Number(item.month) === Number(snapshot.month) &&
+                  Number(item.year) === Number(snapshot.year) - 1
+                    ? " · cùng mùa"
+                    : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <ComparisonPeriodNotice
+            current={snapshot}
+            reference={comparisonReferencePeriod}
+          />
+          {comparisonLoading && (
+            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Đang tải số liệu đối chiếu...
+            </p>
+          )}
+          {comparisonError && (
+            <p className="text-[11px] text-destructive">{comparisonError}</p>
+          )}
+        </div>
+      )}
 
       {snapshot && (
         <div className="h-fit shrink-0 overflow-hidden rounded-lg border border-border bg-card shadow-xs">
@@ -1377,7 +1746,7 @@ export function ForestClassification() {
             <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-sm">
               <span className="flex min-w-0 items-center gap-1.5 truncate">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
-                {MONTHS[(snapshot.month ?? 1) - 1]} {snapshot.year}
+                Cập nhật đến {MONTHS[(snapshot.month ?? 1) - 1]} {snapshot.year}
               </span>
               <StatusBadge status={snapshot.status} />
             </CardTitle>
@@ -1401,7 +1770,9 @@ export function ForestClassification() {
         </Card>
       )}
 
-      {comparison && <ComparisonCard comparison={comparison} />}
+      {comparison && (
+        <ComparisonCard comparison={comparison} currentSnapshot={snapshot} />
+      )}
 
       {/* Legend + area table */}
       {areaSummary.length > 0 && (

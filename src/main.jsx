@@ -29,6 +29,6 @@ createRoot(document.getElementById("root")).render(
         </TooltipProvider>
       </LoadingProvider>
     </BrowserRouter>
-    <ReactQueryDevtools initialIsOpen={false} />
+    {/* <ReactQueryDevtools initialIsOpen={false} /> */}
   </QueryClientProvider>,
 );

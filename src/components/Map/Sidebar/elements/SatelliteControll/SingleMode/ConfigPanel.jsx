@@ -338,7 +338,8 @@ function ConfigPanel() {
               />
             </div>
             <p className="text-[10px] text-foreground/40 leading-relaxed">
-              Nguồn dữ liệu &amp; mức mây chỉ áp dụng cho Ảnh Màu, NDVI và Ảnh Nhiệt (LST). Ảnh Phân Loại được tổng hợp tự động từ nhiều nguồn ảnh.
+              Nguồn dữ liệu và tỷ lệ mây chỉ áp dụng cho Ảnh Màu, Chỉ số thực
+              vật và Ảnh Nhiệt.
             </p>
           </div>
 

@@ -5,3 +5,4 @@ export * from "./wcs";
 export * from "./wmts";
 export * from "./tms";
 export * from "./wmsc";
+export * from "./timeSeries";

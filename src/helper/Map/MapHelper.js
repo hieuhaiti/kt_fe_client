@@ -1,5 +1,6 @@
 import { defaultLatLong, defaultZoom } from "@/constant/mapData";
 import {
+  GEOSERVER_LAYER_ORDER_PRIORITY,
   GEOSERVER_POINT_CLUSTER_OPTIONS,
   GEOSERVER_POINT_PAINT,
 } from "@/constant/geoserverData";
@@ -503,40 +504,80 @@ const svgStringToImage = (svgString, color = "#3b82f6", size = 32) => {
 };
 
 /**
+ * Lấy độ ưu tiên của các lớp dữ liệu do ứng dụng quản lý.
+ * Thứ tự từ dưới lên: raster → polygon → line → point.
+ * @param {Object} layer
+ * @returns {number|null}
+ */
+function getManagedLayerPriority(layer) {
+  const metadataPriority = layer?.metadata?.ktGeometryPriority;
+  if (typeof metadataPriority === "number") return metadataPriority;
+
+  const layerId = String(layer?.id || "");
+  if (layerId.startsWith("cat-")) {
+    if (layerId.endsWith("-fill") || layerId.endsWith("-outline")) {
+      return GEOSERVER_LAYER_ORDER_PRIORITY.POLYGON;
+    }
+    if (layerId.endsWith("-line")) {
+      return GEOSERVER_LAYER_ORDER_PRIORITY.LINE;
+    }
+    return GEOSERVER_LAYER_ORDER_PRIORITY.POINT;
+  }
+
+  const sourceId =
+    typeof layer?.source === "string" ? layer.source : String(layer?.source || "");
+  if (sourceId.startsWith("satellite-src-")) {
+    return GEOSERVER_LAYER_ORDER_PRIORITY.RASTER;
+  }
+
+  return null;
+}
+
+/**
+ * Trả về beforeId để chèn một lớp vào đúng thứ tự chung giữa các nhóm lớp.
+ * @param {mapboxgl.Map} map
+ * @param {number} priority
+ * @param {string} [currentLayerId]
+ * @returns {string|undefined}
+ */
+function getManagedLayerBeforeId(map, priority, currentLayerId) {
+  const layers = map.getStyle()?.layers ?? [];
+  return layers.find((layer) => {
+    if (layer.id === currentLayerId) return false;
+    const layerPriority = getManagedLayerPriority(layer);
+    return layerPriority !== null && layerPriority > priority;
+  })?.id;
+}
+
+export function getDataLayerBeforeId(map, geometryType, currentLayerId) {
+  return getManagedLayerBeforeId(
+    map,
+    getOgcGeometryPriority(geometryType),
+    currentLayerId,
+  );
+}
+
+/**
  * Trả về beforeId để chèn layer đúng thứ tự:
  * polygon fill → polygon outline → line → point/label/cluster (trên cùng)
  * @param {mapboxgl.Map} map
  * @param {"fill"|"outline"|"line"|"point"} priority
+ * @param {string} [currentLayerId]
  * @returns {string|undefined}
  */
-function getCategoryLayerBeforeId(map, priority) {
-  // Thứ tự: fill → outline → line → point/label/cluster
-  // Chỉ tìm trong các category layers có prefix "cat-"
-  const layers = map.getStyle()?.layers ?? [];
-  const catLayers = layers.filter((l) => l.id.startsWith("cat-"));
-
-  const lookup = {
-    // fill đứng trước tất cả cat- layers khác
-    fill: [
-      "-outline",
-      "-line",
-      "-point",
-      "-label",
-      "-cluster",
-      "-cluster-count",
-    ],
-    // outline đứng trước line, point, label, cluster
-    outline: ["-line", "-point", "-label", "-cluster", "-cluster-count"],
-    // line đứng trước point, label, cluster
-    line: ["-point", "-label", "-cluster", "-cluster-count"],
-    // point/label/cluster đứng trên cùng
-    point: [],
+function getCategoryLayerBeforeId(map, priority, currentLayerId) {
+  const priorityByType = {
+    fill: GEOSERVER_LAYER_ORDER_PRIORITY.POLYGON,
+    outline: GEOSERVER_LAYER_ORDER_PRIORITY.POLYGON,
+    line: GEOSERVER_LAYER_ORDER_PRIORITY.LINE,
+    point: GEOSERVER_LAYER_ORDER_PRIORITY.POINT,
   };
 
-  const suffixes = lookup[priority] ?? [];
-  if (!suffixes.length) return undefined;
-
-  return catLayers.find((l) => suffixes.some((s) => l.id.endsWith(s)))?.id;
+  return getManagedLayerBeforeId(
+    map,
+    priorityByType[priority] ?? GEOSERVER_LAYER_ORDER_PRIORITY.POINT,
+    currentLayerId,
+  );
 }
 
 export const addOrUpdateCategoryLayer = async (
@@ -550,6 +591,11 @@ export const addOrUpdateCategoryLayer = async (
 ) => {
   const layerType = getMapLayerType(geometryType);
   const visibility = visible ? "visible" : "none";
+  const metadata = {
+    ktGeometryPriority: getOgcGeometryPriority(geometryType),
+    ktGeometryType: geometryType || null,
+    ktManagedOverlay: true,
+  };
   // Prefix "cat-" để nhận diện category layers (phân biệt với satellite/raster layers)
   const L = (s) => `cat-${sourceId}-${s}`;
 
@@ -602,6 +648,7 @@ export const addOrUpdateCategoryLayer = async (
               type: "circle",
               source: sourceId,
               filter: unclusteredFilter,
+              metadata,
               layout: { visibility },
               paint: {
                 "circle-radius": 12,
@@ -621,6 +668,7 @@ export const addOrUpdateCategoryLayer = async (
               type: "symbol",
               source: sourceId,
               filter: unclusteredFilter,
+              metadata,
               layout: {
                 "icon-image": iconImageId,
                 "icon-size": 0.5,
@@ -640,6 +688,7 @@ export const addOrUpdateCategoryLayer = async (
               type: "circle",
               source: sourceId,
               filter: unclusteredFilter,
+              metadata,
               layout: { visibility },
               paint: {
                 "circle-radius": 6,
@@ -661,6 +710,7 @@ export const addOrUpdateCategoryLayer = async (
             type: "circle",
             source: sourceId,
             filter: unclusteredFilter,
+            metadata,
             layout: { visibility },
             paint: {
               "circle-radius": 6,
@@ -682,6 +732,7 @@ export const addOrUpdateCategoryLayer = async (
           type: "symbol",
           source: sourceId,
           filter: unclusteredFilter,
+          metadata,
           layout: {
             "text-field": ["get", "name"],
             "text-size": 11,
@@ -706,6 +757,7 @@ export const addOrUpdateCategoryLayer = async (
           type: "circle",
           source: sourceId,
           filter: ["has", "point_count"],
+          metadata,
           layout: { visibility },
           paint: {
             "circle-color": color,
@@ -761,6 +813,7 @@ export const addOrUpdateCategoryLayer = async (
           type: "symbol",
           source: sourceId,
           filter: ["has", "point_count"],
+          metadata,
           layout: {
             "text-field": ["get", "point_count"],
             "text-size": 14,
@@ -784,6 +837,7 @@ export const addOrUpdateCategoryLayer = async (
             id: L("line"),
             type: "line",
             source: sourceId,
+            metadata,
             layout: {
               "line-join": "round",
               "line-cap": "round",
@@ -795,7 +849,7 @@ export const addOrUpdateCategoryLayer = async (
               "line-opacity": 0.8,
             },
           },
-          getCategoryLayerBeforeId(map, "line"),
+          getCategoryLayerBeforeId(map, "line", L("line")),
         );
       } else {
         map.setLayoutProperty(L("line"), "visibility", visibility);
@@ -808,13 +862,14 @@ export const addOrUpdateCategoryLayer = async (
             id: L("fill"),
             type: "fill",
             source: sourceId,
+            metadata,
             layout: { visibility },
             paint: {
               "fill-color": color,
               "fill-opacity": 0.2,
             },
           },
-          getCategoryLayerBeforeId(map, "fill"),
+          getCategoryLayerBeforeId(map, "fill", L("fill")),
         );
       } else {
         map.setLayoutProperty(L("fill"), "visibility", visibility);
@@ -827,6 +882,7 @@ export const addOrUpdateCategoryLayer = async (
             id: L("outline"),
             type: "line",
             source: sourceId,
+            metadata,
             layout: { visibility },
             paint: {
               "line-color": color,
@@ -834,7 +890,7 @@ export const addOrUpdateCategoryLayer = async (
               "line-opacity": 0.7,
             },
           },
-          getCategoryLayerBeforeId(map, "outline"),
+          getCategoryLayerBeforeId(map, "outline", L("outline")),
         );
       } else {
         map.setLayoutProperty(L("outline"), "visibility", visibility);
@@ -1249,31 +1305,18 @@ export const buildSatelliteSourceId = (mapId, layerId) => {
 };
 
 /**
- * Trả về beforeId để chèn raster layer xuống dưới mọi category layer
+ * Trả về beforeId để chèn raster layer xuống dưới mọi lớp vùng, đường và điểm.
  * Thứ tự: raster → polygon fill → polygon outline → line → point/label/cluster
  * @param {mapboxgl.Map} map
+ * @param {string} [currentLayerId]
  * @returns {string|undefined}
  */
-function getRasterBeforeId(map) {
-  // Raster phải nằm dưới tất cả category layers (cat- prefix)
-  const layers = map.getStyle()?.layers ?? [];
-  return layers.find((l) => l.id.startsWith("cat-"))?.id;
+export function getRasterLayerBeforeId(map, currentLayerId) {
+  return getDataLayerBeforeId(map, "raster", currentLayerId);
 }
 
 const getOgcLayerBeforeId = (map, geometryType, currentLayerId) => {
-  const priority = getOgcGeometryPriority(geometryType);
-  const layers = map.getStyle()?.layers ?? [];
-  const ogcBeforeId = layers.find((item) => {
-    if (!item.id.startsWith("ogc-") || item.id === currentLayerId) return false;
-    const itemPriority =
-      typeof item.metadata?.ktGeometryPriority === "number"
-        ? item.metadata.ktGeometryPriority
-        : 0;
-
-    return itemPriority > priority;
-  })?.id;
-
-  return ogcBeforeId || getRasterBeforeId(map);
+  return getDataLayerBeforeId(map, geometryType, currentLayerId);
 };
 
 export const buildOgcSourceId = (layer) =>
@@ -1327,6 +1370,7 @@ const addOrUpdateGeoServerPointLayer = async (
       ktGeometryType: layer?.geometry_type || null,
       ktLayerCode: layer?.code || null,
       ktOgcPointLayer: true,
+      ktManagedOverlay: true,
     };
 
     if (!map.getLayer(ids.cluster)) {
@@ -1470,6 +1514,7 @@ const addOrUpdateGeoServerWmsLayer = (
           ktGeometryPriority: getOgcGeometryPriority(layer?.geometry_type),
           ktGeometryType: layer?.geometry_type || null,
           ktLayerCode: layer?.code || null,
+          ktManagedOverlay: true,
         },
         layout: { visibility: visible ? "visible" : "none" },
         paint: {
@@ -1577,11 +1622,16 @@ export const addSatelliteLayerToMap = (
         id: layerId,
         type: "raster",
         source: sourceId,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+          ktGeometryType: "raster",
+          ktManagedOverlay: true,
+        },
         paint: {
           "raster-opacity": opacity,
         },
       },
-      getRasterBeforeId(map),
+      getRasterLayerBeforeId(map, layerId),
     );
 
     return sourceId;
@@ -1715,11 +1765,16 @@ export const addClassifiedLayerToMap = (
         id: layerId,
         type: "raster",
         source: sourceId,
+        metadata: {
+          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+          ktGeometryType: "raster",
+          ktManagedOverlay: true,
+        },
         paint: {
           "raster-opacity": opacity,
         },
       },
-      getRasterBeforeId(map),
+      getRasterLayerBeforeId(map, layerId),
     );
 
     return sourceId;

@@ -1,8 +1,9 @@
-import { Layers, Flame, Satellite, TreePine } from "lucide-react";
+import { Layers, Flame, Satellite, TreePine, History } from "lucide-react";
 import { DataLayers } from "@/components/Map/Sidebar/elements/Datalyer";
 import { MonitoringAndAlerting } from "@/components/Map/Sidebar/elements/MonitoringAndAlerting";
 import { SingleMode } from "@/components/Map/Sidebar/elements/SatelliteControll";
 import { ForestClassification } from "@/components/Map/Sidebar/elements/ForestClassification";
+import { TimeSeries } from "@/components/Map/Sidebar/elements/TimeSeries";
 
 export const trackMapping = [
   {
@@ -27,6 +28,13 @@ export const trackMapping = [
     label: "Phân loại rừng",
     component: ForestClassification,
     color: "text-green-600",
+  },
+  {
+    id: "timeSeries",
+    icon: History,
+    label: "Ảnh theo thời gian",
+    component: TimeSeries,
+    color: "text-purple-500",
   },
   {
     id: "spatial-analysis",

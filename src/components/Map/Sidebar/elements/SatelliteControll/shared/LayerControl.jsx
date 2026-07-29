@@ -122,15 +122,6 @@ function StatsRows({ layerType, stats }) {
     if (stats.lstMaxC != null)
       rows.push({ label: "LST max", value: `${stats.lstMaxC.toFixed(2)} °C` });
   }
-  if (layerType === "classified") {
-    if (stats.year != null)
-      rows.push({ label: "Năm phân tích", value: String(stats.year) });
-    if (stats.oobAccuracyPct != null)
-      rows.push({ label: "Độ chính xác OOB", value: `${stats.oobAccuracyPct.toFixed(1)} %` });
-    if (stats.testAccuracyPct != null)
-      rows.push({ label: "Test accuracy", value: `${stats.testAccuracyPct.toFixed(1)} %` });
-  }
-
   if (rows.length === 0) return null;
 
   return (
@@ -141,19 +132,6 @@ function StatsRows({ layerType, stats }) {
           <span className="text-[10px] font-medium text-foreground/80">{value}</span>
         </div>
       ))}
-      {layerType === "classified" && Array.isArray(stats.areaByClass) && stats.areaByClass.some(c => c.areaHa != null) && (
-        <div className="pt-1 space-y-0.5">
-          {stats.areaByClass.map((c) => (
-            <div key={c.classId} className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: c.color }} />
-              <span className="text-[10px] text-foreground/60 flex-1 truncate">{c.name}</span>
-              <span className="text-[10px] font-medium text-foreground/80 shrink-0">
-                {c.areaHa != null ? `${c.areaHa.toLocaleString("vi-VN")} ha` : "—"}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

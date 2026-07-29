@@ -87,6 +87,8 @@ export const useWeatherOverlay = (mapRef, canvasRef) => {
     const map = refMap || mapInstance;
 
     return map &&
+      map.style &&
+      !map._removed &&
       typeof map.isStyleLoaded === "function" &&
       typeof map.getContainer === "function"
       ? map

@@ -31,6 +31,10 @@ import {
   clearHighlightFromMap,
 } from "@/helper/Map/MapHelper";
 import {
+  addOrUpdateTimeSeriesLayer,
+  removeTimeSeriesLayer,
+} from "@/helper/Map/geoserver/timeSeries";
+import {
   MapToolbar,
   MapStatusBar,
   WeatherInfo,
@@ -70,10 +74,12 @@ const mapOgcFeatureToModalData = (feature, layer) => ({
   id: feature?.id || feature?.properties?.id || feature?.properties?.objectid,
   code: layer?.code,
   name: getFeatureDisplayName(feature, layer),
+  description: layer?.description,
   category: layer?.category,
   layer_group: layer?.layer_group,
   geometry_type: layer?.geometry_type || feature?.geometry?.type,
   geometry_data: feature?.geometry,
+  default_style: layer?.default_style || {},
   properties: {
     ...(feature?.properties || {}),
     layer_code: layer?.code,
@@ -108,6 +114,7 @@ export default function MapComponent() {
 
   // Map style
   const mapStyle = useMapStyleStore((s) => s.mapStyle);
+  const appliedMapStyleRef = useRef(mapStyle || defaultStyle);
   const terrainState = useMapStyleStore((s) => s.terrainState);
   const setTerrainLoading = useMapStyleStore((s) => s.setTerrainLoading);
   const terrainStateRef = useRef(terrainState);
@@ -156,14 +163,19 @@ export default function MapComponent() {
   // Category layers & highlight - MUST declare before used in effects
   const categoryLayersData = useMapStore((s) => s.categoryLayersData);
   const ogcLayersData = useMapStore((s) => s.ogcLayersData);
+  const timeSeriesLayersData = useMapStore((s) => s.timeSeriesLayersData);
   const categoryLayersDataRef = useRef(categoryLayersData);
   const ogcLayersDataRef = useRef(ogcLayersData);
+  const timeSeriesLayersDataRef = useRef(timeSeriesLayersData);
   useEffect(() => {
     categoryLayersDataRef.current = categoryLayersData;
   }, [categoryLayersData]);
   useEffect(() => {
     ogcLayersDataRef.current = ogcLayersData;
   }, [ogcLayersData]);
+  useEffect(() => {
+    timeSeriesLayersDataRef.current = timeSeriesLayersData;
+  }, [timeSeriesLayersData]);
   const highlightedFeature = useMapStore((s) => s.highlightedFeature);
 
   // draw state
@@ -259,14 +271,6 @@ export default function MapComponent() {
         new ResetControl(() => useMapStyleStore.getState().terrainState),
         "bottom-right",
       );
-      map.addControl(
-        new mapboxgl.NavigationControl({
-          showCompass: true,
-          showZoom: true,
-          visualizePitch: true,
-        }),
-        "bottom-right",
-      );
 
       setMapsReady((prev) => ({ ...prev, single: true }));
     };
@@ -302,6 +306,14 @@ export default function MapComponent() {
     });
 
     return () => {
+      const mapStore = useMapStore.getState();
+      if (mapStore.mapInstance === map) {
+        mapStore.clearMapRef();
+      }
+      if (mapStore.mapRefObj === mapRef) {
+        mapStore.setMapRefObj(null);
+      }
+
       if (mapRef.current.single) {
         mapRef.current.single.remove();
         mapRef.current.single = null;
@@ -352,7 +364,10 @@ export default function MapComponent() {
               mapContainer.current,
             );
           } catch (error) {
-            console.error("[MapComponent] Failed to initialize map compare:", error);
+            console.error(
+              "[MapComponent] Failed to initialize map compare:",
+              error,
+            );
           }
         }
       }, 100);
@@ -493,6 +508,10 @@ export default function MapComponent() {
   useEffect(() => {
     if (!mapRef.current.single) return;
 
+    const nextMapStyle = mapStyle || defaultStyle;
+    if (appliedMapStyleRef.current === nextMapStyle) return;
+    appliedMapStyleRef.current = nextMapStyle;
+
     const transformStyle = (previousStyle, nextStyle) => {
       if (!previousStyle) return nextStyle;
 
@@ -513,9 +532,8 @@ export default function MapComponent() {
       const customLayers = (previousStyle.layers || []).filter((l) => {
         const isBuiltin = builtinLayerIds.has(l.id);
         const hasCustomSource = customSources[l.source];
-        const isCustomPrefix = /^(cat-|ogc-|satellite-|highlight-|buffer-)/.test(
-          l.id,
-        );
+        const isCustomPrefix =
+          /^(cat-|ogc-|satellite-|highlight-|buffer-)/.test(l.id);
         const isSpecial = ["mapbox-dem", "sky", "3d-buildings"].includes(l.id);
         return !isBuiltin && (hasCustomSource || isCustomPrefix || isSpecial);
       });
@@ -551,11 +569,22 @@ export default function MapComponent() {
           addOrUpdateGeoServerLayer(map, sourceId, layer, true);
         },
       );
+
+      Object.entries(timeSeriesLayersDataRef.current || {}).forEach(
+        ([groupCode, entry]) => {
+          if (entry?.tileUrl) {
+            addOrUpdateTimeSeriesLayer(map, groupCode, {
+              tileUrl: entry.tileUrl,
+              opacity: entry.opacity,
+            });
+          }
+        },
+      );
     };
 
     // SETUP LISTENER BEFORE calling setStyle!
     mapRef.current.single.once("style.load", onStyleLoad);
-    mapRef.current.single.setStyle(mapStyle || defaultStyle, {
+    mapRef.current.single.setStyle(nextMapStyle, {
       transformStyle,
     });
 
@@ -582,9 +611,20 @@ export default function MapComponent() {
             addOrUpdateGeoServerLayer(splitMap, sourceId, layer, true);
           },
         );
+
+        Object.entries(timeSeriesLayersDataRef.current || {}).forEach(
+          ([groupCode, entry]) => {
+            if (entry?.tileUrl) {
+              addOrUpdateTimeSeriesLayer(splitMap, groupCode, {
+                tileUrl: entry.tileUrl,
+                opacity: entry.opacity,
+              });
+            }
+          },
+        );
       };
       mapRef.current.split.once("style.load", onSplitStyleLoad);
-      mapRef.current.split.setStyle(mapStyle || defaultStyle, {
+      mapRef.current.split.setStyle(nextMapStyle, {
         transformStyle,
       });
     }
@@ -850,6 +890,56 @@ export default function MapComponent() {
 
     prevOgcKeysRef.current = currentKeys;
   }, [ogcLayersData, mapsReady.single]);
+
+  // Đồng bộ time-series raster layers (client tự build tileUrl từ geoserver_layer)
+  const prevTimeSeriesKeysRef = useRef(new Set());
+  useEffect(() => {
+    const map = mapRef.current.single;
+    if (!map || !mapsReady.single) return;
+
+    const currentKeys = new Set(Object.keys(timeSeriesLayersData));
+    const prevKeys = prevTimeSeriesKeysRef.current;
+
+    currentKeys.forEach((groupCode) => {
+      const entry = timeSeriesLayersData[groupCode];
+      if (entry?.tileUrl) {
+        addOrUpdateTimeSeriesLayer(map, groupCode, {
+          tileUrl: entry.tileUrl,
+          opacity: entry.opacity,
+        });
+      }
+    });
+
+    prevKeys.forEach((groupCode) => {
+      if (!currentKeys.has(groupCode)) {
+        removeTimeSeriesLayer(map, groupCode);
+      }
+    });
+
+    const splitMap = mapRef.current.split;
+    if (splitMap) {
+      const applyToSplit = () => {
+        currentKeys.forEach((groupCode) => {
+          const entry = timeSeriesLayersData[groupCode];
+          if (entry?.tileUrl) {
+            addOrUpdateTimeSeriesLayer(splitMap, groupCode, {
+              tileUrl: entry.tileUrl,
+              opacity: entry.opacity,
+            });
+          }
+        });
+        prevKeys.forEach((groupCode) => {
+          if (!currentKeys.has(groupCode)) {
+            removeTimeSeriesLayer(splitMap, groupCode);
+          }
+        });
+      };
+      if (splitMap.isStyleLoaded()) applyToSplit();
+      else splitMap.once("style.load", applyToSplit);
+    }
+
+    prevTimeSeriesKeysRef.current = currentKeys;
+  }, [timeSeriesLayersData, mapsReady.single]);
 
   useEffect(() => {
     const map = mapRef.current.single;

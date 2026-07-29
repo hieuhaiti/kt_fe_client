@@ -34,6 +34,7 @@ export const GEOSERVER_OUTPUT_FORMATS = {
 };
 
 export const GEOSERVER_LAYER_ORDER_PRIORITY = {
+  RASTER: -1,
   POLYGON: 0,
   LINE: 1,
   POINT: 2,

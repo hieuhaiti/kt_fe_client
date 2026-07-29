@@ -83,6 +83,7 @@ export const buildOgcPointLayerIds = (sourceId) => ({
 
 export const getOgcGeometryPriority = (geometryType) => {
   const type = String(geometryType || "").toLowerCase();
+  if (type.includes("raster")) return GEOSERVER_LAYER_ORDER_PRIORITY.RASTER;
   if (type.includes("point")) return GEOSERVER_LAYER_ORDER_PRIORITY.POINT;
   if (type.includes("line")) return GEOSERVER_LAYER_ORDER_PRIORITY.LINE;
   return GEOSERVER_LAYER_ORDER_PRIORITY.POLYGON;

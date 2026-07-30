@@ -38,9 +38,42 @@ export const buildWfsFeatureUrl = (
   )}?${params.toString()}`;
 };
 
+// Mapbox GL supercluster (cluster: true) chỉ hoạt động với Point.
+// Nếu backend WFS trả Multi* (do bảng PostGIS dùng type Multi*), tách thành
+// các feature đơn để cluster + render đúng. Áp dụng cho cả Line/Polygon để
+// dự phòng nếu sau này có branch WFS cho geometry non-point.
+const MULTI_TO_SINGLE = {
+  MultiPoint: "Point",
+  MultiLineString: "LineString",
+  MultiPolygon: "Polygon",
+};
+
+const explodeMultiFeatures = (features) => {
+  const out = [];
+  for (const f of features) {
+    const g = f?.geometry;
+    if (!g || !g.type) continue;
+    const singleType = MULTI_TO_SINGLE[g.type];
+    if (singleType && Array.isArray(g.coordinates) && g.coordinates.length > 0) {
+      g.coordinates.forEach((coord, i) => {
+        out.push({
+          ...f,
+          id: f.id != null ? `${f.id}__${i}` : undefined,
+          geometry: { type: singleType, coordinates: coord },
+        });
+      });
+    } else {
+      out.push(f);
+    }
+  }
+  return out;
+};
+
 export const fetchWfsGeoJson = async (layer, options) => {
   const url = buildWfsFeatureUrl(layer, options);
-  if (!url) return { type: "FeatureCollection", features: [] };
+  if (!url) {
+    return { type: "FeatureCollection", features: [] };
+  }
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -48,10 +81,10 @@ export const fetchWfsGeoJson = async (layer, options) => {
   }
 
   const data = await response.json();
-  if (data?.type === "FeatureCollection") return data;
+  const rawFeatures =
+    data?.type === "FeatureCollection"
+      ? Array.isArray(data.features) ? data.features : []
+      : Array.isArray(data?.features) ? data.features : [];
 
-  return {
-    type: "FeatureCollection",
-    features: Array.isArray(data?.features) ? data.features : [],
-  };
+  return { type: "FeatureCollection", features: explodeMultiFeatures(rawFeatures) };
 };

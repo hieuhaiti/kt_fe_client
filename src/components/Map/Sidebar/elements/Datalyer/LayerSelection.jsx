@@ -39,7 +39,7 @@ function LayerItem({ layer, onToggle }) {
     }
 
     prevEnabledRef.current = layer.enabled;
-  }, [layer.enabled, sourceId]);
+  }, [layer.enabled, sourceId, layer.code]);
 
   const tooltipParts = [
     layer.description,

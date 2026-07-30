@@ -1351,7 +1351,7 @@ const addOrUpdateGeoServerPointLayer = async (
 
   try {
     const geojson = await fetchWfsGeoJson(layer);
-    if (!map.getStyle()) return;
+    if (!map.isStyleLoaded()) return;
 
     const existingSource = map.getSource(sourceId);
     if (existingSource?.setData) {
@@ -1535,7 +1535,8 @@ export const addOrUpdateGeoServerLayer = async (
   layer,
   visible = true,
 ) => {
-  if (isOgcPointGeometry(layer?.geometry_type)) {
+  const isPoint = isOgcPointGeometry(layer?.geometry_type);
+  if (isPoint) {
     await addOrUpdateGeoServerPointLayer(map, sourceId, layer, visible);
     return;
   }

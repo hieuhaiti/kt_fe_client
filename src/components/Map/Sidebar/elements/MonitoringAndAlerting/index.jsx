@@ -387,7 +387,10 @@ function getFireDistrictTiles(source) {
       district?.geeGeneratedAt ??
       district?.gee_generated_at ??
       null;
-    const temporaryTileUrl = getUsableTemporaryTileTemplate(rawUrl, generatedAt);
+    const temporaryTileUrl = getUsableTemporaryTileTemplate(
+      rawUrl,
+      generatedAt,
+    );
     const tileUrl = geoserverTileUrl || temporaryTileUrl;
     if (!tileUrl) continue;
 
@@ -473,17 +476,28 @@ function toStableFireDistrictRaster(source, fallback) {
       ? countsComplete
       : explicitFullyPublished && countsComplete;
 
-  let tileUrl = null;
+  // Build 1 WMS URL per layer thay vì gộp N layer vào 1 URL. Lý do: nếu bất kỳ
+  // layer nào GeoServer từ chối (chưa publish xong, permission, sai style...)
+  // → toàn bộ request combined trả về XML ServiceException → MapLibre không
+  // decode được. Với per-layer, layer lỗi chỉ mất tile của nó, các layer khác
+  // vẫn hiển thị.
+  const layerTiles = [];
   if (fullyPublished) {
-    try {
-      const candidate = buildWmsTileUrl({
-        geoserver_layer: layers.join(","),
-      });
-      if (isValidHttpTileTemplate(candidate)) tileUrl = candidate;
-    } catch {
-      tileUrl = null;
+    for (const layerName of layers) {
+      try {
+        const candidate = buildWmsTileUrl({ geoserver_layer: layerName });
+        if (isValidHttpTileTemplate(candidate)) {
+          layerTiles.push({
+            key: layerName.replace(/[^a-zA-Z0-9_-]/g, "_"),
+            tileUrl: candidate,
+          });
+        }
+      } catch {
+        /* skip layer lỗi build URL */
+      }
     }
   }
+  const tileUrl = layerTiles[0]?.tileUrl ?? null; // giữ cho consumer legacy đọc
 
   return {
     layers,
@@ -494,13 +508,14 @@ function toStableFireDistrictRaster(source, fallback) {
     districtCodeCount,
     fullyPublished,
     districtTiles,
+    layerTiles,
     hasDistrictScope:
       districts.length > 0 ||
       districtTiles.length > 0 ||
       layers.length > 0 ||
       total > 0,
     scaleM: Number(source?.scaleM ?? source?.scale_m) || null,
-    stable: Boolean(fullyPublished && tileUrl),
+    stable: Boolean(fullyPublished && layerTiles.length > 0),
     tileUrl,
   };
 }
@@ -521,6 +536,7 @@ function normalizePublishedFireItem(item) {
     geoserverLayerCount: raster.ready,
     totalDistricts: raster.total,
     tileUrl: raster.tileUrl,
+    layerTiles: raster.layerTiles,
   };
 }
 
@@ -716,13 +732,44 @@ function extractFireRiskView({ latestPayload, mapPayload }) {
 
 // ── Map layer helpers ────────────────────────────────────────────────────────
 
+// Chạy `fn` khi map style đã sẵn sàng (source/layer add mới không throw).
+// Không dùng `map.once("load")` vì "load" chỉ fire 1 lần khi khởi tạo — nếu
+// user thao tác sau khi map đã load nhưng `isStyleLoaded()` tạm trả false (do
+// đang xử lý style op khác/basemap swap/HMR), `.once("load")` schedule một
+// callback không bao giờ fire → layer bị bỏ. Pattern chuẩn: chờ `styledata`
+// hoặc `idle` (fire mỗi lần style ổn định) rồi re-check `isStyleLoaded()`.
+// Trả về hàm huỷ để caller cleanup khi effect re-run.
+function runWhenStyleReady(map, fn) {
+  if (!map) return () => {};
+  if (map.isStyleLoaded?.()) {
+    fn();
+    return () => {};
+  }
+  let cancelled = false;
+  const check = () => {
+    if (cancelled) return;
+    if (map.isStyleLoaded?.()) {
+      map.off("styledata", check);
+      map.off("idle", check);
+      fn();
+    }
+  };
+  map.on("styledata", check);
+  map.on("idle", check);
+  return () => {
+    cancelled = true;
+    map.off("styledata", check);
+    map.off("idle", check);
+  };
+}
+
 function removeFireLayers(map) {
   const style = map.getStyle?.();
   const districtRasterLayerIds = (style?.layers || [])
     .map((layer) => layer.id)
     .filter((id) => id.startsWith(FIRE_DISTRICT_RASTER_LAYER_PREFIX));
-  const districtRasterSourceIds = Object.keys(style?.sources || {}).filter((id) =>
-    id.startsWith(FIRE_DISTRICT_RASTER_SOURCE_PREFIX),
+  const districtRasterSourceIds = Object.keys(style?.sources || {}).filter(
+    (id) => id.startsWith(FIRE_DISTRICT_RASTER_SOURCE_PREFIX),
   );
 
   [
@@ -733,13 +780,11 @@ function removeFireLayers(map) {
   ].forEach((id) => {
     if (map.getLayer(id)) map.removeLayer(id);
   });
-  [
-    FIRE_SOURCE_DIST,
-    FIRE_RASTER_SOURCE,
-    ...districtRasterSourceIds,
-  ].forEach((id) => {
-    if (map.getSource(id)) map.removeSource(id);
-  });
+  [FIRE_SOURCE_DIST, FIRE_RASTER_SOURCE, ...districtRasterSourceIds].forEach(
+    (id) => {
+      if (map.getSource(id)) map.removeSource(id);
+    },
+  );
 }
 
 // ── Ensure-source-and-layer helpers (idempotent, không teardown) ──────────────
@@ -956,55 +1001,96 @@ function setLayerVisibilityOnMap(map, layerId, visible) {
   map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
 }
 
-// Add/update raster overlay từ history snapshot. Mỗi snapshot 1 source + layer
-// riêng để user có thể chồng nhiều tháng lên nhau. Insert BELOW district fill
-// để boundary luôn nằm trên (dễ đọc). Nếu URL đổi (không xảy ra vì layer name
-// stable), remove + add lại.
-function ensureHistoryRasterLayer(map, id, tileUrl, opacity, visible) {
-  const srcId = `${HISTORY_SRC_PREFIX}${id}`;
-  const lyrId = `${HISTORY_LAYER_PREFIX}${id}`;
-  const src = map.getSource(srcId);
-  if (src && src.tiles?.[0] !== tileUrl) {
-    if (map.getLayer(lyrId)) map.removeLayer(lyrId);
-    map.removeSource(srcId);
-  }
-  if (!map.getSource(srcId)) {
-    map.addSource(srcId, {
-      type: "raster",
-      tiles: [tileUrl],
-      tileSize: 256,
-      attribution: "Dữ liệu lịch sử cảnh báo cháy rừng",
-    });
-  }
-  if (!map.getLayer(lyrId)) {
-    map.addLayer(
-      {
-        id: lyrId,
+// Add/update raster overlays cho 1 snapshot lịch sử. Mỗi snapshot có N layer
+// (mỗi huyện 1 layer) → tạo N source + N maplibre layer keyed theo
+// `${prefix}${historyId}--${sanitizedLayerName}`. Lý do KHÔNG gộp thành 1 WMS
+// URL với 10 layer: nếu 1 layer GeoServer từ chối, ServiceException XML sẽ
+// làm cả tile decode fail → mất luôn 9 layer còn lại. Per-layer bảo đảm lỗi
+// cục bộ không lan.
+function ensureHistoryRasterLayers(map, id, layerTiles, opacity, visible) {
+  const wantedLayerIds = new Set();
+  const idPrefix = `${HISTORY_LAYER_PREFIX}${id}--`;
+  const srcPrefix = `${HISTORY_SRC_PREFIX}${id}--`;
+
+  for (const tile of layerTiles ?? []) {
+    if (!tile?.key || !tile?.tileUrl) continue;
+    const srcId = `${srcPrefix}${tile.key}`;
+    const lyrId = `${idPrefix}${tile.key}`;
+    wantedLayerIds.add(lyrId);
+
+    const src = map.getSource(srcId);
+    if (src && src.tiles?.[0] !== tile.tileUrl) {
+      if (map.getLayer(lyrId)) map.removeLayer(lyrId);
+      map.removeSource(srcId);
+    }
+    if (!map.getSource(srcId)) {
+      map.addSource(srcId, {
         type: "raster",
-        source: srcId,
-        metadata: {
-          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
-          ktGeometryType: "raster",
-          ktManagedOverlay: true,
+        tiles: [tile.tileUrl],
+        tileSize: 256,
+        attribution: "Dữ liệu lịch sử cảnh báo cháy rừng",
+      });
+    }
+    if (!map.getLayer(lyrId)) {
+      map.addLayer(
+        {
+          id: lyrId,
+          type: "raster",
+          source: srcId,
+          metadata: {
+            ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.RASTER,
+            ktGeometryType: "raster",
+            ktManagedOverlay: true,
+            historyId: id,
+          },
+          paint: { "raster-opacity": opacity },
+          layout: { visibility: visible ? "visible" : "none" },
         },
-        paint: { "raster-opacity": opacity },
-        layout: { visibility: visible ? "visible" : "none" },
-      },
-      getRasterLayerBeforeId(map, lyrId),
-    );
-  } else {
-    map.setPaintProperty(lyrId, "raster-opacity", opacity);
-    map.setLayoutProperty(lyrId, "visibility", visible ? "visible" : "none");
-    const beforeId = getRasterLayerBeforeId(map, lyrId);
-    if (beforeId) map.moveLayer(lyrId, beforeId);
+        getRasterLayerBeforeId(map, lyrId),
+      );
+    } else {
+      map.setPaintProperty(lyrId, "raster-opacity", opacity);
+      map.setLayoutProperty(lyrId, "visibility", visible ? "visible" : "none");
+      const beforeId = getRasterLayerBeforeId(map, lyrId);
+      if (beforeId) map.moveLayer(lyrId, beforeId);
+    }
+  }
+
+  // Dọn layer/source cũ của cùng historyId nhưng không còn trong layerTiles
+  // (trường hợp danh sách layer thay đổi giữa 2 lần refetch).
+  const style = map.getStyle?.();
+  const staleLayerIds = (style?.layers || [])
+    .map((l) => l.id)
+    .filter((lid) => lid.startsWith(idPrefix) && !wantedLayerIds.has(lid));
+  for (const lyrId of staleLayerIds) {
+    if (map.getLayer(lyrId)) map.removeLayer(lyrId);
+  }
+  const staleSourceIds = Object.keys(style?.sources || {}).filter(
+    (sid) =>
+      sid.startsWith(srcPrefix) &&
+      !wantedLayerIds.has(sid.replace(srcPrefix, idPrefix)),
+  );
+  for (const srcId of staleSourceIds) {
+    if (map.getSource(srcId)) map.removeSource(srcId);
   }
 }
 
 function removeHistoryRasterLayer(map, id) {
-  const srcId = `${HISTORY_SRC_PREFIX}${id}`;
-  const lyrId = `${HISTORY_LAYER_PREFIX}${id}`;
-  if (map.getLayer(lyrId)) map.removeLayer(lyrId);
-  if (map.getSource(srcId)) map.removeSource(srcId);
+  const idPrefix = `${HISTORY_LAYER_PREFIX}${id}--`;
+  const srcPrefix = `${HISTORY_SRC_PREFIX}${id}--`;
+  const style = map.getStyle?.();
+  const layerIds = (style?.layers || [])
+    .map((l) => l.id)
+    .filter((lid) => lid.startsWith(idPrefix));
+  for (const lyrId of layerIds) {
+    if (map.getLayer(lyrId)) map.removeLayer(lyrId);
+  }
+  const sourceIds = Object.keys(style?.sources || {}).filter((sid) =>
+    sid.startsWith(srcPrefix),
+  );
+  for (const srcId of sourceIds) {
+    if (map.getSource(srcId)) map.removeSource(srcId);
+  }
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -1307,7 +1393,7 @@ export function MonitoringAndAlerting() {
   const handleSelectPublishedDate = useCallback(
     async (id) => {
       const item = historyItems.find((historyItem) => historyItem.id === id);
-      if (!item?.tileUrl) return;
+      if (!item?.layerTiles?.length) return;
 
       // Hiển thị ngay mảng layer từ published-history. Request district chỉ
       // dùng để xác thực/làm mới; nếu route lỗi thì WMS history vẫn được giữ.
@@ -1343,6 +1429,7 @@ export function MonitoringAndAlerting() {
                   geoserverLayerCount: raster.ready,
                   totalDistricts: raster.total,
                   tileUrl: raster.tileUrl,
+                  layerTiles: raster.layerTiles,
                 }
               : historyItem,
           ),
@@ -1429,7 +1516,7 @@ export function MonitoringAndAlerting() {
   //     do cleanup của Effect A chạy trên mỗi visibility change.
 
   // Effect A — Layer lifecycle. Add hoặc update source theo dữ liệu.
-  // Không có return cleanup → không tear-down khi deps đổi.
+  // Có return cleanup để huỷ pending style-ready waiter khi deps đổi giữa chừng.
   useEffect(() => {
     if (!mapInstance || !view) return;
 
@@ -1445,16 +1532,14 @@ export function MonitoringAndAlerting() {
       ensureDistrictLayer(mapInstance, view.districtFeatureCollection);
     };
 
-    if (mapInstance.isStyleLoaded?.()) setup();
-    else mapInstance.once("load", setup);
+    return runWhenStyleReady(mapInstance, setup);
   }, [districtRasterTiles, mapInstance, view, rasterTileUrl]);
 
   // Effect B — Visibility toggle. Không tear-down source/layer, chỉ set
   // `layout.visibility=visible|none`. Toggle không nháy, không refetch tile.
   useEffect(() => {
     if (!mapInstance) return;
-    const hasRaster =
-      Boolean(rasterTileUrl) || districtRasterTiles.length > 0;
+    const hasRaster = Boolean(rasterTileUrl) || districtRasterTiles.length > 0;
     forEachCurrentRasterLayer(mapInstance, (layerId) => {
       setLayerVisibilityOnMap(
         mapInstance,
@@ -1498,28 +1583,34 @@ export function MonitoringAndAlerting() {
       // Add / update từng entry hiện tại trong state.
       for (const [id, cfg] of Object.entries(historyLayers)) {
         const item = historyItems.find((h) => h.id === id);
-        if (!item?.tileUrl) continue;
-        ensureHistoryRasterLayer(
+        if (!item?.layerTiles?.length) continue;
+        ensureHistoryRasterLayers(
           mapInstance,
           id,
-          item.tileUrl,
+          item.layerTiles,
           cfg.opacity ?? 0.5,
           cfg.visible !== false,
         );
       }
-      // Xoá layer nào KHÔNG còn trong state — user bấm "remove".
+      // Xoá layer nào KHÔNG còn trong state — user bấm "remove". Vì layer id
+      // theo pattern `${HISTORY_LAYER_PREFIX}${historyId}--${key}`, trích
+      // historyId bằng cách bỏ prefix rồi cắt tới `--`.
       const wanted = new Set(Object.keys(historyLayers));
       const style = mapInstance.getStyle?.();
-      const currentIds = (style?.layers || [])
+      const seenHistoryIds = new Set();
+      (style?.layers || [])
         .map((l) => l.id)
-        .filter((id) => id.startsWith(HISTORY_LAYER_PREFIX))
-        .map((id) => id.slice(HISTORY_LAYER_PREFIX.length));
-      for (const id of currentIds) {
+        .filter((lid) => lid.startsWith(HISTORY_LAYER_PREFIX))
+        .forEach((lid) => {
+          const tail = lid.slice(HISTORY_LAYER_PREFIX.length);
+          const historyId = tail.split("--")[0];
+          if (historyId) seenHistoryIds.add(historyId);
+        });
+      for (const id of seenHistoryIds) {
         if (!wanted.has(id)) removeHistoryRasterLayer(mapInstance, id);
       }
     };
-    if (mapInstance.isStyleLoaded?.()) apply();
-    else mapInstance.once("load", apply);
+    return runWhenStyleReady(mapInstance, apply);
   }, [mapInstance, historyLayers, historyItems]);
 
   // Effect F — Cleanup CHỈ khi unmount. Không có deps → không chạy giữa chừng.
@@ -1528,11 +1619,18 @@ export function MonitoringAndAlerting() {
       if (!mapInstance) return;
       removeFireLayers(mapInstance);
       // Dọn cả history overlays — không phụ thuộc state hiện tại; lấy từ style.
+      // Layer id giờ có pattern `${prefix}${historyId}--${key}`; unique
+      // historyId bằng cách cắt trước `--`.
       const style = mapInstance.getStyle?.();
-      const histIds = (style?.layers || [])
+      const histIds = new Set();
+      (style?.layers || [])
         .map((l) => l.id)
-        .filter((id) => id.startsWith(HISTORY_LAYER_PREFIX))
-        .map((id) => id.slice(HISTORY_LAYER_PREFIX.length));
+        .filter((lid) => lid.startsWith(HISTORY_LAYER_PREFIX))
+        .forEach((lid) => {
+          const tail = lid.slice(HISTORY_LAYER_PREFIX.length);
+          const historyId = tail.split("--")[0];
+          if (historyId) histIds.add(historyId);
+        });
       for (const id of histIds) removeHistoryRasterLayer(mapInstance, id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1587,7 +1685,7 @@ export function MonitoringAndAlerting() {
           onSelect={handleSelectPublishedDate}
         />
         {selectedHistoryItem && (
-          <p className="rounded-md border border-info/30 bg-info/10 px-2.5 py-2 text-[11px] leading-4 text-info-foreground">
+          <p className="rounded-md border border-info/30 bg-info/10 px-2.5 py-2 text-[11px] leading-4 text-foreground">
             Đang hiển thị ảnh bản đồ ngày{" "}
             <b>{formatFireAnalysisDate(selectedHistoryItem.analysisDate)}</b>.
             Thống kê bên dưới vẫn là dữ liệu mới nhất.

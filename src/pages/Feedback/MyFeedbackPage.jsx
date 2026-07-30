@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import {
+  ArrowRight,
   Calendar,
+  CircleDot,
   ExternalLink,
   FileImage,
   MapPin,
@@ -87,6 +89,79 @@ function isImageUrl(url) {
   return /\.(png|jpe?g|webp|gif|avif)$/i.test(String(url).split("?")[0]);
 }
 
+function FeedbackResponseHistory({ logs, isLoading }) {
+  return (
+    <section aria-labelledby="feedback-response-heading">
+      <div className="mb-3 flex items-center gap-2">
+        <MessageSquare className="h-4 w-4 text-primary" />
+        <h3
+          id="feedback-response-heading"
+          className="text-sm font-semibold text-foreground"
+        >
+          Phản hồi từ cơ quan xử lý
+        </h3>
+        {!isLoading && logs.length > 0 && (
+          <Badge variant="outline">{logs.length}</Badge>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="rounded-lg border border-border bg-muted/30 py-6">
+          <LoadingInline position="center" />
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          Chưa có phản hồi từ cơ quan xử lý.
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {logs.map((log) => {
+            const fromStatus = getStatusMeta(log.fromStatus);
+            const toStatus = getStatusMeta(log.toStatus);
+
+            return (
+              <li
+                key={log.id}
+                className="relative rounded-lg border border-border bg-card p-4 pl-11"
+              >
+                <span className="absolute left-4 top-4 flex size-5 items-center justify-center rounded-full bg-(--info-subtle) text-(--info-subtle-foreground)">
+                  <CircleDot className="size-3.5" aria-hidden="true" />
+                </span>
+
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {log.fromStatus && (
+                    <>
+                      <Badge variant={fromStatus.variant}>
+                        {fromStatus.label}
+                      </Badge>
+                      <ArrowRight
+                        className="size-3.5 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </>
+                  )}
+                  <Badge variant={toStatus.variant}>{toStatus.label}</Badge>
+                </div>
+
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-card-foreground">
+                  {log.note || "Cơ quan xử lý đã cập nhật trạng thái phản ánh."}
+                </p>
+
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>{log.changedByName || "Cơ quan xử lý"}</span>
+                  <time dateTime={log.changedAt}>
+                    {formatDateTime(log.changedAt)}
+                  </time>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 function EmptyState({ onCreate }) {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
@@ -157,6 +232,9 @@ export default function MyFeedbackPage() {
     Math.max(1, Math.ceil(total / filters.limit));
   const detail = detailData?.data || selectedFeedback;
   const detailMedia = getMediaUrls(detail);
+  const detailStatusLogs = Array.isArray(detail?.statusLogs)
+    ? detail.statusLogs
+    : [];
 
   const updateFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value, page: 1 }));
@@ -487,6 +565,11 @@ export default function MyFeedbackPage() {
                   </div>
                 </div>
               )}
+
+              <FeedbackResponseHistory
+                logs={detailStatusLogs}
+                isLoading={isFetchingDetail}
+              />
             </div>
           )}
         </DialogContent>

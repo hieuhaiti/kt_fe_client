@@ -63,7 +63,7 @@ function GroupCard({ group, isEnabled, onToggle }) {
           {group.name_vi}
         </span>
         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-          {group.step_count ?? 0} bước · {group.min_year ?? "—"}–
+          {group.step_count ?? 0} ảnh · {group.min_year ?? "—"}–
           {group.max_year ?? "—"}
         </span>
       </span>

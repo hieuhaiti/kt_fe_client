@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck } from "lucide-react";
 import { toast } from "react-toastify";
 import { Button } from "@/components/ui/button";
@@ -23,8 +24,26 @@ import { cn, formatDateTime } from "@/lib/utils";
 
 const params = { page: 1, limit: 10, onlyUnread: false };
 
+function getNotificationPath(notification) {
+  const data = notification?.data || notification?.payload;
+  if (
+    typeof data?.path === "string" &&
+    data.path.startsWith("/") &&
+    !data.path.startsWith("//")
+  ) {
+    return data.path;
+  }
+  if (notification?.channel === "feedback") return "/feedback/mine";
+  if (notification?.channel === "comment") {
+    return data?.newsSlug ? `/news/${data.newsSlug}` : "/news";
+  }
+  if (notification?.channel === "news") return "/news";
+  return null;
+}
+
 export default function NotificationMenu({ enabled = true }) {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const query = useGetNotificationsQuery(params, {
     enabled,
@@ -162,6 +181,8 @@ export default function NotificationMenu({ enabled = true }) {
                 if (!notification.isRead) {
                   markOneMutation.mutate(notification.id);
                 }
+                const path = getNotificationPath(notification);
+                if (path) navigate(path);
               }}
             >
               <div className="flex w-full items-start justify-between gap-3">

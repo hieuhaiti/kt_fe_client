@@ -6,9 +6,9 @@ import { useApiQuery } from "@/services/apiClient/useApi";
 const NEWS_PATH = "/news";
 const ADMIN_COMMENTS_PATH = "/admin/comments";
 
-export function getNewsComments(newsId, params = {}) {
+export function getNewsComments(newsSlug, params = {}) {
   return fetcher(
-    withQuery(`${NEWS_PATH}/${newsId}/comments`, {
+    withQuery(`${NEWS_PATH}/${encodeURIComponent(newsSlug)}/comments`, {
       page: 1,
       limit: 20,
       lang: "vi",
@@ -17,10 +17,10 @@ export function getNewsComments(newsId, params = {}) {
   );
 }
 
-export function useGetNewsCommentsQuery(newsId, params = {}, options = {}) {
+export function useGetNewsCommentsQuery(newsSlug, params = {}, options = {}) {
   return useApiQuery(
-    ["news", newsId, "comments", params],
-    withQuery(`${NEWS_PATH}/${newsId}/comments`, {
+    ["news", newsSlug, "comments", params],
+    withQuery(`${NEWS_PATH}/${encodeURIComponent(newsSlug)}/comments`, {
       page: 1,
       limit: 20,
       lang: "vi",
@@ -29,7 +29,7 @@ export function useGetNewsCommentsQuery(newsId, params = {}, options = {}) {
     {
       ...options,
       enabled:
-        Boolean(newsId) &&
+        Boolean(newsSlug) &&
         (options.enabled === undefined ? true : options.enabled),
     },
   );
@@ -59,9 +59,11 @@ export function useGetAllCommentsQuery(params = {}, options = {}) {
   );
 }
 
-export function createNewsComment(newsId, content, lang = "vi") {
+export function createNewsComment(newsSlug, content, lang = "vi") {
   return mutater(
-    withQuery(`${NEWS_PATH}/${newsId}/comments`, { lang }),
+    withQuery(`${NEWS_PATH}/${encodeURIComponent(newsSlug)}/comments`, {
+      lang,
+    }),
     "POST",
     { content },
   );
@@ -82,9 +84,12 @@ export function deleteComment(commentId, lang = "vi") {
   );
 }
 
-export function deleteOwnNewsComment(newsId, commentId, lang = "vi") {
+export function deleteOwnNewsComment(newsSlug, commentId, lang = "vi") {
   return mutater(
-    withQuery(`${NEWS_PATH}/${newsId}/comments/${commentId}`, { lang }),
+    withQuery(
+      `${NEWS_PATH}/${encodeURIComponent(newsSlug)}/comments/${commentId}`,
+      { lang },
+    ),
     "DELETE",
   );
 }

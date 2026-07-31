@@ -13,7 +13,8 @@ export function useNotificationWebSocket({
   channels = [],
 }) {
   const roleCode = useAuthStore(
-    (state) => state.user?.role?.code || state.user?.role_code,
+    (state) =>
+      state.user?.roleCode || state.user?.role?.code || state.user?.role_code,
   );
   const channelKey = createChannelKey(channels);
   const socketChannels = useMemo(

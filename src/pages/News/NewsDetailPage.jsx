@@ -56,6 +56,10 @@ export default function NewsDetailPage() {
     enabled: hasNewsSlug,
   });
   const news = data?.data || null;
+  const newsSlug =
+    typeof news?.slug === "string" && news.slug.trim()
+      ? news.slug.trim()
+      : normalizedParam;
   const hasHtmlContent = isHtmlContent(news?.content);
   const sanitizedContent = useMemo(
     () => DOMPurify.sanitize(news?.content || ""),
@@ -68,14 +72,14 @@ export default function NewsDetailPage() {
     isLoading: isCommentsLoading,
     isError: isCommentsError,
   } = useGetNewsCommentsQuery(
-    news?.id,
+    newsSlug,
     {
       page: commentPage,
       limit: 10,
       lang: "vi",
     },
     {
-      enabled: Boolean(news?.id),
+      enabled: Boolean(news && newsSlug),
       retry: false,
     },
   );
@@ -100,7 +104,7 @@ export default function NewsDetailPage() {
     }
     setIsSubmitting(true);
     try {
-      await createNewsComment(news.id, trimmed);
+      await createNewsComment(newsSlug, trimmed);
       toast.success("Bình luận đã được gửi và đang chờ kiểm duyệt.");
       setCommentText("");
     } catch (err) {

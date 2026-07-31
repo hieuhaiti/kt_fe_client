@@ -40,14 +40,6 @@ function getThemeLabel(themeCode) {
   return PDF_MAP_THEME_LABELS[themeCode] || "Bản đồ khác";
 }
 
-function isImageFile(item) {
-  const mimeType = item?.mimeType || "";
-  const fileUrl = item?.fileUrl || "";
-  return (
-    mimeType.startsWith("image/") || /\.(jpe?g|png|webp|gif)$/i.test(fileUrl)
-  );
-}
-
 function buildYearOptions() {
   const currentYear = new Date().getFullYear();
   return Array.from({ length: currentYear - 1990 }, (_, index) =>
@@ -297,11 +289,6 @@ export default function PdfMapsPage() {
                   {pdfMaps.map((item) => {
                     const fileUrl = item.fileUrl;
                     const parsedFileUrl = fileUrl ? praseLink(fileUrl) : "";
-                    const thumbnailUrl = item.thumbnailUrl
-                      ? praseLink(item.thumbnailUrl)
-                      : "";
-                    const previewUrl =
-                      thumbnailUrl || (isImageFile(item) ? parsedFileUrl : "");
 
                     return (
                       <Card
@@ -329,28 +316,14 @@ export default function PdfMapsPage() {
                             )}
                           </div>
 
-                          {previewUrl ? (
-                            <img
-                              src={previewUrl}
-                              alt={item.title || "Bản đồ PDF"}
-                              loading="lazy"
-                              decoding="async"
-                              fetchPriority="low"
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center bg-(image:--gradient-surface-map)">
-                              <div className="rounded-lg border border-border bg-card/90 p-4 text-center shadow-sm">
-                                <Map className="mx-auto mb-2 h-10 w-10 text-primary" />
-                                <p className="text-xs font-medium text-card-foreground">
-                                  Bản đồ PDF
-                                </p>
-                              </div>
+                          <div className="flex h-full items-center justify-center bg-(image:--gradient-surface-map)">
+                            <div className="rounded-lg border border-border bg-card/90 p-4 text-center shadow-sm">
+                              <Map className="mx-auto mb-2 h-10 w-10 text-primary" />
+                              <p className="text-xs font-medium text-card-foreground">
+                                Bản đồ PDF
+                              </p>
                             </div>
-                          )}
+                          </div>
                         </div>
 
                         <CardContent className="flex flex-1 flex-col p-4">

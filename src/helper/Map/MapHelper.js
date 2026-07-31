@@ -986,7 +986,31 @@ const HIGHLIGHT_LAYERS = [
   "highlight-line",
   "highlight-fill",
   "highlight-outline",
+  "highlight-outline-dashed",
 ];
+
+const bboxPolygonToDegenerateCheck = (geometry) => {
+  if (!geometry || geometry.type !== "Polygon") return { degenerate: false };
+  const ring = geometry.coordinates?.[0];
+  if (!Array.isArray(ring) || ring.length < 2) return { degenerate: false };
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const spanLng = maxLng - minLng;
+  const spanLat = maxLat - minLat;
+  // ~1m tolerance ở xích đạo (0.00001° ≈ 1.1m)
+  const degenerate = spanLng < 1e-5 && spanLat < 1e-5;
+  const centerLng = (minLng + maxLng) / 2;
+  const centerLat = (minLat + maxLat) / 2;
+  return { degenerate, center: [centerLng, centerLat], spanLng, spanLat };
+};
 
 /**
  * Highlight một đối tượng trên map (Point, Line, hoặc Polygon)
@@ -1024,6 +1048,21 @@ export const highlightFeatureOnMap = (map, geojsonFeature) => {
       return;
     }
 
+    // Bbox degenerate (Point layer có 1 điểm) → collapse về Point highlight
+    const bboxCheck = bboxPolygonToDegenerateCheck(feature.geometry);
+    if (bboxCheck.degenerate && bboxCheck.center) {
+      feature = {
+        ...feature,
+        geometry: { type: "Point", coordinates: bboxCheck.center },
+      };
+    }
+
+    // Nếu style chưa xong (đang đổi basemap), chờ idle rồi tiếp
+    if (!map.isStyleLoaded()) {
+      map.once("idle", () => highlightFeatureOnMap(map, feature));
+      return;
+    }
+
     // Thêm source
     map.addSource(HIGHLIGHT_SOURCE, {
       type: "geojson",
@@ -1031,6 +1070,7 @@ export const highlightFeatureOnMap = (map, geojsonFeature) => {
     });
 
     const geomType = feature.geometry?.type || "";
+    const isLayerExtent = feature.properties?.highlight_mode === "layer_extent";
 
     if (geomType === "Point" || geomType === "MultiPoint") {
       // ─── Highlight Point ──────────────────────────────────
@@ -1099,7 +1139,7 @@ export const highlightFeatureOnMap = (map, geojsonFeature) => {
         source: HIGHLIGHT_SOURCE,
         paint: {
           "fill-color": "#FF6B6B",
-          "fill-opacity": 0.25,
+          "fill-opacity": isLayerExtent ? 0.08 : 0.25,
         },
       });
 
@@ -1109,10 +1149,25 @@ export const highlightFeatureOnMap = (map, geojsonFeature) => {
         source: HIGHLIGHT_SOURCE,
         paint: {
           "line-color": "#FF6B6B",
-          "line-width": 3,
+          "line-width": isLayerExtent ? 2 : 3,
           "line-opacity": 0.9,
         },
       });
+
+      // Với layer_extent (bbox raster/vector), thêm outline dashed ngoài cho dễ đọc
+      if (isLayerExtent) {
+        map.addLayer({
+          id: "highlight-outline-dashed",
+          type: "line",
+          source: HIGHLIGHT_SOURCE,
+          paint: {
+            "line-color": "#FFFFFF",
+            "line-width": 1,
+            "line-opacity": 0.9,
+            "line-dasharray": [4, 3],
+          },
+        });
+      }
     }
 
     // Bay đến đối tượng được highlight
@@ -1351,7 +1406,11 @@ const addOrUpdateGeoServerPointLayer = async (
 
   try {
     const geojson = await fetchWfsGeoJson(layer);
-    if (!map.isStyleLoaded()) return;
+    if (map._removed) return;
+    if (!map.isStyleLoaded()) {
+      await new Promise((resolve) => map.once("idle", resolve));
+      if (map._removed) return;
+    }
 
     const existingSource = map.getSource(sourceId);
     if (existingSource?.setData) {

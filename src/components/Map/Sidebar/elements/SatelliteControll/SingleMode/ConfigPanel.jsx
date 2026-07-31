@@ -298,25 +298,6 @@ function ConfigPanel() {
               <label className="text-xs text-foreground/60 shrink-0">
                 {LABELS.collection}
               </label>
-              {/* <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
-                {COLLECTION_OPTIONS.find((opt) => opt.value === collection)?.label || collection}
-              </span> */}
-              <Select
-                onValueChange={(value) => setCollection(value)}
-                value={collection}
-                disabled={isLoading}
-              >
-                <SelectTrigger className="w-[150px] h-8">
-                  <SelectValue placeholder={LABELS.selectCollection} />
-                </SelectTrigger>
-                <SelectContent>
-                  {COLLECTION_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div>
               <div className="flex items-center justify-between mb-2">

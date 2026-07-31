@@ -2306,9 +2306,9 @@ function FireRiskHistoryBrowser({
         )}
 
         {expanded && !isEmpty && (
-          <div className="border-t border-blue-200 dark:border-blue-900">
+          <div className="max-h-72 overflow-y-auto border-t border-blue-200 dark:border-blue-900">
             {/* Search — filter theo ngày (YYYY-MM-DD) hoặc tên layer WMS. */}
-            <div className="px-3 pt-2 pb-1">
+            <div className="sticky top-0 z-10 bg-blue-50/95 px-3 pt-2 pb-1 backdrop-blur dark:bg-blue-950/60">
               <div className="relative">
                 <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-blue-500 dark:text-blue-400" />
                 <input
@@ -2338,8 +2338,8 @@ function FireRiskHistoryBrowser({
               )}
             </div>
 
-            {/* List — max-h giới hạn để card không phình khi có nhiều tháng. */}
-            <ul className="max-h-56 divide-y divide-blue-200 overflow-y-auto border-t border-blue-200 dark:divide-blue-900 dark:border-blue-900">
+            {/* List — scroll thuộc container ngoài (max-h-72) để search dính đầu. */}
+            <ul className="divide-y divide-blue-200 border-t border-blue-200 dark:divide-blue-900 dark:border-blue-900">
               {filtered.length === 0 ? (
                 <li className="px-3 py-3 text-center text-[11px] text-blue-700 dark:text-blue-300">
                   Không có kỳ dữ liệu khớp "{query}"

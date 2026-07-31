@@ -23,6 +23,27 @@ import { buildOgcSourceId } from "@/helper/Map/MapHelper";
 const UNCATEGORIZED_KEY = "__uncategorized__";
 const UNCATEGORIZED_LABEL = "Khác";
 
+const CATEGORY_LABELS_VI = {
+  land_cover: "Lớp phủ mặt đất",
+  remote_sensing: "Ảnh viễn thám",
+  fire_risk_district: "Nguy cơ cháy rừng theo huyện",
+  forest_district: "Phân loại rừng theo huyện",
+  administrative: "Ranh giới hành chính",
+  hydrology: "Thủy văn",
+  transportation: "Giao thông",
+  infrastructure: "Hạ tầng",
+  environment: "Môi trường",
+  agriculture: "Nông nghiệp",
+  forestry: "Lâm nghiệp",
+};
+
+const toCategoryLabel = (key) => {
+  if (CATEGORY_LABELS_VI[key]) return CATEGORY_LABELS_VI[key];
+  return String(key)
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 function LayerItem({ layer, onToggle }) {
   const sourceId = buildOgcSourceId(layer);
   const prevEnabledRef = useRef(layer.enabled);
@@ -40,16 +61,6 @@ function LayerItem({ layer, onToggle }) {
 
     prevEnabledRef.current = layer.enabled;
   }, [layer.enabled, sourceId, layer.code]);
-
-  const tooltipParts = [
-    layer.description,
-    layer.code ? `Mã: ${layer.code}` : null,
-    layer.geometry_type ? `Kiểu: ${layer.geometry_type}` : null,
-    layer.category ? `Danh mục: ${layer.category}` : null,
-    typeof layer.feature_count === "number"
-      ? `${layer.feature_count} đối tượng`
-      : null,
-  ].filter(Boolean);
 
   return (
     <Tooltip>
@@ -69,22 +80,12 @@ function LayerItem({ layer, onToggle }) {
             <span className="block truncate text-sm font-medium text-foreground">
               {layer.name}
             </span>
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-              {layer.feature_count || 0} đối tượng
-            </span>
           </span>
         </label>
       </TooltipTrigger>
       <TooltipContent side="right" className="max-w-xs">
         <div className="space-y-1">
           <div className="font-semibold text-sm">{layer.name}</div>
-          {tooltipParts.length > 0 ? (
-            <div className="text-xs opacity-90 whitespace-pre-line">
-              {tooltipParts.join("\n")}
-            </div>
-          ) : (
-            <div className="text-xs opacity-70">Không có mô tả</div>
-          )}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -167,7 +168,7 @@ export function LayerSelection() {
   } = useDataLayerStore();
 
   const overlayQuery = useGetMapLayersQuery(
-    { page: 1, limit: 100, layer_kind: "overlay" },
+    { page: 1, limit: 100, layer_kind: "overlay", publish_data: true },
     { staleTime: 2 * 60 * 1000 },
   );
 
@@ -181,10 +182,7 @@ export function LayerSelection() {
 
   const mapLayers = useMemo(() => {
     const extract = (payload) =>
-      payload?.data?.items ||
-      payload?.data?.layers ||
-      payload?.items ||
-      [];
+      payload?.data?.items || payload?.data?.layers || payload?.items || [];
 
     const overlays = extract(overlayQuery.data).map((l) => ({
       ...l,
@@ -243,7 +241,8 @@ export function LayerSelection() {
     });
     return Array.from(groups.entries()).map(([key, layers]) => ({
       key,
-      label: key === UNCATEGORIZED_KEY ? UNCATEGORIZED_LABEL : key,
+      label:
+        key === UNCATEGORIZED_KEY ? UNCATEGORIZED_LABEL : toCategoryLabel(key),
       layers,
     }));
   }, [overlayLayers]);

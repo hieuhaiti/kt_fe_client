@@ -3,14 +3,10 @@ import { Search, X, MapPin, ArrowUpRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import LoadingInline from "@/components/common/LoadingInline";
-import {
-  getMapLayer,
-  useGetMapLayersQuery,
-} from "@/services/mapLayersService";
+import { getMapLayer, useGetMapLayersQuery } from "@/services/mapLayersService";
 import { useMapStore } from "@/stores/Map/useMapStore";
 import { useDataLayerStore } from "@/stores/Map/Sidebar/useDataLayerStore";
 import { useDebounce } from "@/hooks/useDebounce";
-import { flyToFeature } from "@/helper/Map/MapHelper";
 import {
   Tooltip,
   TooltipContent,
@@ -36,6 +32,7 @@ export function SearchEngine() {
       limit: 100,
       is_active: true,
       is_public: true,
+      publish_data: true,
       q: searchText,
     },
     { enabled: !!searchText },
@@ -91,16 +88,24 @@ export function SearchEngine() {
         layerStore.toggleOgcLayerEnabled(ogcLayer.id, true);
       }
 
-      // 3. Fly-to bbox (không vẽ highlight, để LayerItem tự render dữ liệu thật)
+      // 3. Highlight vùng bbox của layer (hoạt động với raster/point/line/polygon).
+      //    MapComponent effect sẽ đọc highlightedFeature → vẽ overlay + fly-to.
       if (mapLayer.bbox) {
-        const map = useMapStore.getState().getMap();
-        if (map) {
-          flyToFeature(map, {
-            type: "Feature",
-            properties: {},
-            geometry: mapLayer.bbox,
-          });
-        }
+        useMapStore.getState().setHighlightedFeature({
+          type: "Feature",
+          properties: {
+            name:
+              mapLayer.name_vi ||
+              mapLayer.name_en ||
+              mapLayer.name ||
+              mapLayer.code,
+            layer_code: mapLayer.code,
+            layer_kind: mapLayer.layer_kind,
+            geometry_type: mapLayer.geometry_type,
+            highlight_mode: "layer_extent",
+          },
+          geometry: mapLayer.bbox,
+        });
       }
 
       setSearchValue("");
@@ -180,10 +185,10 @@ export function SearchEngine() {
                     <MapPin className="w-5 h-5 text-primary shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate text-foreground">
-                        {result.name_vi || result.name_en || result.name || result.code}
-                      </div>
-                      <div className="text-xs truncate text-muted-foreground opacity-75">
-                        {result.geometry_type || result.layer_group || result.category}
+                        {result.name_vi ||
+                          result.name_en ||
+                          result.name ||
+                          result.code}
                       </div>
                     </div>
                     {loadingId === (result.code || result.id) ? (

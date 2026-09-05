@@ -77,7 +77,7 @@ function LayerItem({ layer, onToggle }) {
           />
 
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-foreground">
+            <span className="block line-clamp-2 text-sm font-medium text-foreground">
               {layer.name}
             </span>
           </span>

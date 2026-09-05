@@ -53,7 +53,6 @@ function ConfigPanel() {
     isLoading,
     setStartDate,
     setEndDate,
-    setCollection,
     setCloudCover,
     setIsLoading,
     setError,

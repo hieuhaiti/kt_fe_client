@@ -8,14 +8,17 @@ import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import { praseLink } from "@/lib/utils";
 import {
   buildOgcPointLayerIds,
+  buildOgcVectorLayerIds,
   buildOgcRasterLayerId,
   buildOgcSourceId as buildGeoServerSourceId,
   buildWmsFeatureInfoUrl,
   buildWmsTileUrl,
   fetchWfsGeoJson,
+  getDefaultRasterOpacity,
   getOgcGeometryPriority,
   getOgcLayerName,
   isOgcPointGeometry,
+  toMapboxStyle,
 } from "@/helper/Map/geoserver";
 
 // Helper function to calculate bounds from coordinates
@@ -1379,7 +1382,7 @@ export const buildOgcSourceId = (layer) =>
 
 export const buildOgcLayerId = (sourceId) => buildOgcRasterLayerId(sourceId);
 
-export { buildOgcPointLayerIds, isOgcPointGeometry };
+export { buildOgcPointLayerIds, buildOgcVectorLayerIds, isOgcPointGeometry };
 
 export const buildOgcWmsTileUrl = (layer) => buildWmsTileUrl(layer);
 
@@ -1389,6 +1392,89 @@ export const buildOgcFeatureInfoUrl = (map, layer, point) =>
 const moveLayerIfNeeded = (map, layerId, beforeId) => {
   if (beforeId && beforeId !== layerId && map.getLayer(layerId)) {
     map.moveLayer(layerId, beforeId);
+  }
+};
+
+const applyMapboxProperties = (map, layerId, style) => {
+  if (!map.getLayer(layerId)) return;
+  Object.entries(style.paint || {}).forEach(([property, value]) => {
+    map.setPaintProperty(layerId, property, value);
+  });
+  Object.entries(style.layout || {}).forEach(([property, value]) => {
+    map.setLayoutProperty(layerId, property, value);
+  });
+};
+
+const addOrUpdateGeoServerVectorLayer = async (map, sourceId, layer, visible = true, options = {}) => {
+  if (!map || !sourceId || !getOgcLayerName(layer)) return;
+  const geometryType = String(layer?.geometry_type || '').toLowerCase().includes('polygon') ? 'polygon' : 'line';
+  const ids = buildOgcVectorLayerIds(sourceId);
+  const visibility = visible ? 'visible' : 'none';
+
+  try {
+    const geojson = await fetchWfsGeoJson(layer, options);
+    if (options.isCurrent && !options.isCurrent()) return;
+    if (map._removed) return;
+    if (!map.isStyleLoaded()) {
+      await new Promise((resolve) => map.once('idle', resolve));
+      if (options.isCurrent && !options.isCurrent()) return;
+      if (map._removed) return;
+    }
+
+    const existingSource = map.getSource(sourceId);
+    if (existingSource?.setData) existingSource.setData(geojson);
+    else if (!existingSource) map.addSource(sourceId, { type: 'geojson', data: geojson });
+
+    const style = toMapboxStyle(layer.default_style, geometryType);
+    const metadata = {
+      ktGeometryPriority: getOgcGeometryPriority(layer?.geometry_type),
+      ktGeometryType: layer?.geometry_type || null,
+      ktLayerCode: layer?.code || null,
+      ktManagedOverlay: true,
+    };
+    const beforeId = getOgcLayerBeforeId(map, layer?.geometry_type, geometryType === 'polygon' ? ids.fill : ids.line);
+    const fillPaint = {
+      'fill-color': '#F0F0F0',
+      'fill-opacity': 0.15,
+      ...(style.paint['fill-color'] !== undefined ? { 'fill-color': style.paint['fill-color'] } : {}),
+      ...(style.paint['fill-opacity'] !== undefined ? { 'fill-opacity': style.paint['fill-opacity'] } : {}),
+      ...(style.paint['fill-antialias'] !== undefined ? { 'fill-antialias': style.paint['fill-antialias'] } : {}),
+    };
+    const linePaint = {
+      'line-color': '#333333',
+      'line-width': 2,
+      ...(style.paint['line-color'] !== undefined ? { 'line-color': style.paint['line-color'] } : {}),
+      ...(style.paint['line-opacity'] !== undefined ? { 'line-opacity': style.paint['line-opacity'] } : {}),
+      ...(style.paint['line-width'] !== undefined ? { 'line-width': style.paint['line-width'] } : {}),
+      ...(style.paint['line-blur'] !== undefined ? { 'line-blur': style.paint['line-blur'] } : {}),
+      ...(style.paint['line-dasharray'] !== undefined ? { 'line-dasharray': style.paint['line-dasharray'] } : {}),
+      ...(style.paint['line-offset'] !== undefined ? { 'line-offset': style.paint['line-offset'] } : {}),
+    };
+    const lineLayout = {
+      visibility,
+      'line-join': 'round',
+      'line-cap': 'round',
+      ...(style.layout || {}),
+    };
+    const layerDefinitions = geometryType === 'polygon'
+      ? [
+          { id: ids.fill, type: 'fill', paint: fillPaint, layout: { visibility } },
+          { id: ids.outline, type: 'line', paint: linePaint, layout: lineLayout },
+        ]
+      : [{ id: ids.line, type: 'line', paint: linePaint, layout: lineLayout }];
+
+    layerDefinitions.forEach((definition) => {
+      if (map.getLayer(definition.id)) {
+        applyMapboxProperties(map, definition.id, definition);
+        map.setLayoutProperty(definition.id, 'visibility', visibility);
+        moveLayerIfNeeded(map, definition.id, beforeId);
+      } else {
+        map.addLayer({ ...definition, source: sourceId, metadata }, beforeId);
+      }
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') return;
+    console.warn('Lỗi khi thêm/cập nhật OGC vector layer:', error.message);
   }
 };
 
@@ -1422,6 +1508,18 @@ const addOrUpdateGeoServerPointLayer = async (
         ...GEOSERVER_POINT_CLUSTER_OPTIONS,
       });
     }
+
+    const style = toMapboxStyle(layer.default_style, 'point');
+    const pointPaint = {
+      ...GEOSERVER_POINT_PAINT.point,
+      ...style.paint,
+    };
+    const pointHaloPaint = {
+      ...GEOSERVER_POINT_PAINT.pointHalo,
+      ...(style.paint['circle-color'] !== undefined ? { 'circle-color': style.paint['circle-color'] } : {}),
+      ...(style.paint['circle-opacity'] !== undefined ? { 'circle-opacity': style.paint['circle-opacity'] } : {}),
+      ...(style.paint['circle-radius'] !== undefined ? { 'circle-radius': style.paint['circle-radius'] } : {}),
+    };
 
     const beforeId = getOgcLayerBeforeId(map, layer?.geometry_type, ids.cluster);
     const metadata = {
@@ -1482,12 +1580,13 @@ const addOrUpdateGeoServerPointLayer = async (
           filter: ["!", ["has", "point_count"]],
           metadata,
           layout: { visibility },
-          paint: GEOSERVER_POINT_PAINT.pointHalo,
+          paint: pointHaloPaint,
         },
         beforeId,
       );
     } else {
       map.setLayoutProperty(ids.pointHalo, "visibility", visibility);
+      applyMapboxProperties(map, ids.pointHalo, { paint: pointHaloPaint });
       moveLayerIfNeeded(map, ids.pointHalo, beforeId);
     }
 
@@ -1500,12 +1599,13 @@ const addOrUpdateGeoServerPointLayer = async (
           filter: ["!", ["has", "point_count"]],
           metadata,
           layout: { visibility },
-          paint: GEOSERVER_POINT_PAINT.point,
+          paint: pointPaint,
         },
         beforeId,
       );
     } else {
       map.setLayoutProperty(ids.point, "visibility", visibility);
+      applyMapboxProperties(map, ids.point, { paint: pointPaint });
       moveLayerIfNeeded(map, ids.point, beforeId);
     }
   } catch (error) {
@@ -1526,10 +1626,19 @@ const addOrUpdateGeoServerWmsLayer = (
   }
 
   const mapLayerId = buildOgcLayerId(sourceId);
-  const opacity =
-    typeof layer?.default_style?.opacity === "number"
-      ? layer.default_style.opacity
-      : 0.72;
+  const opacity = getDefaultRasterOpacity(layer?.default_style);
+  const style = toMapboxStyle(layer?.default_style, 'raster');
+  const rasterPaint = {
+    'raster-brightness-min': 0,
+    'raster-brightness-max': 1,
+    'raster-contrast': 0,
+    'raster-saturation': 0,
+    'raster-hue-rotate': 0,
+    'raster-fade-duration': 250,
+    'raster-resampling': 'linear',
+    ...style.paint,
+    'raster-opacity': Math.max(0, Math.min(1, opacity)),
+  };
 
   try {
     const beforeId = getOgcLayerBeforeId(
@@ -1555,11 +1664,9 @@ const addOrUpdateGeoServerWmsLayer = (
         "visibility",
         visible ? "visible" : "none",
       );
-      map.setPaintProperty(
-        mapLayerId,
-        "raster-opacity",
-        Math.max(0, Math.min(1, opacity)),
-      );
+      Object.entries(rasterPaint).forEach(([property, value]) => {
+        map.setPaintProperty(mapLayerId, property, value);
+      });
       moveLayerIfNeeded(map, mapLayerId, beforeId);
       return;
     }
@@ -1576,10 +1683,7 @@ const addOrUpdateGeoServerWmsLayer = (
           ktManagedOverlay: true,
         },
         layout: { visibility: visible ? "visible" : "none" },
-        paint: {
-          "raster-opacity": Math.max(0, Math.min(1, opacity)),
-          "raster-fade-duration": 250,
-        },
+        paint: rasterPaint,
       },
       beforeId,
     );
@@ -1593,13 +1697,18 @@ export const addOrUpdateGeoServerLayer = async (
   sourceId,
   layer,
   visible = true,
+  options = {},
 ) => {
   const isPoint = isOgcPointGeometry(layer?.geometry_type);
+  const isRaster = String(layer?.geometry_type || '').toLowerCase().includes('raster');
   if (isPoint) {
     await addOrUpdateGeoServerPointLayer(map, sourceId, layer, visible);
     return;
   }
-
+  if (!isRaster) {
+    await addOrUpdateGeoServerVectorLayer(map, sourceId, layer, visible, options);
+    return;
+  }
   addOrUpdateGeoServerWmsLayer(map, sourceId, layer, visible);
 };
 
@@ -1609,12 +1718,16 @@ export const removeGeoServerLayer = (map, sourceId) => {
   try {
     const mapLayerId = buildOgcLayerId(sourceId);
     const pointLayerIds = buildOgcPointLayerIds(sourceId);
+    const vectorLayerIds = buildOgcVectorLayerIds(sourceId);
 
     [
       pointLayerIds.point,
       pointLayerIds.pointHalo,
       pointLayerIds.clusterCount,
       pointLayerIds.cluster,
+      vectorLayerIds.fill,
+      vectorLayerIds.outline,
+      vectorLayerIds.line,
       mapLayerId,
     ].forEach((layerId) => {
       if (map.getLayer(layerId)) {

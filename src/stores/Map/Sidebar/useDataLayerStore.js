@@ -68,6 +68,8 @@ export const useDataLayerStore = create((set, get) => ({
           max_zoom: layer.max_zoom,
           feature_count: layer.feature_count,
           default_style: layer.default_style || {},
+          legend_config: layer.legend_config || layer.legend || null,
+          legend: layer.legend_config || layer.legend || null,
           is_active: layer.is_active,
           is_public: layer.is_public,
           sort_order: layer.sort_order ?? index,

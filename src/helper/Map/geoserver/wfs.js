@@ -69,13 +69,14 @@ const explodeMultiFeatures = (features) => {
   return out;
 };
 
-export const fetchWfsGeoJson = async (layer, options) => {
-  const url = buildWfsFeatureUrl(layer, options);
+export const fetchWfsGeoJson = async (layer, options = {}) => {
+  const { signal, ...requestOptions } = options;
+  const url = buildWfsFeatureUrl(layer, requestOptions);
   if (!url) {
     return { type: "FeatureCollection", features: [] };
   }
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) {
     throw new Error(`GeoServer WFS ${response.status}`);
   }

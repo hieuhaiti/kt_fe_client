@@ -2,18 +2,18 @@ import { useEffect, useRef, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import * as turf from "@turf/turf";
 
-const _formatDistance = (distanceInKm) => {
+const formatDistance = (distanceInKm) => {
   if (distanceInKm < 1) {
     return `${(distanceInKm * 1000).toFixed(0)} m`;
   }
   return `${distanceInKm.toFixed(2)} km`;
 };
 
-const _formatArea = (areaInSqMeters) => {
+const formatArea = (areaInSqMeters) => {
   if (areaInSqMeters < 10000) {
-    return `${areaInSqMeters.toFixed(0)} mÂ²`;
+    return `${areaInSqMeters.toFixed(0)} m²`;
   }
-  return `${(areaInSqMeters / 1000000).toFixed(2)} kmÂ²`;
+  return `${(areaInSqMeters / 1000000).toFixed(2)} km²`;
 };
 
 /**
@@ -29,24 +29,7 @@ export const useMeasurementOverlay = (mapRef) => {
   const clearMarkers = useCallback(() => {
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
-  }, []); // Không có dependencies vì chỉ thao tác với ref
-
-  /**
-   * Format số liệu hiển thị
-   */
-  const formatDistance = (distanceInKm) => {
-    if (distanceInKm < 1) {
-      return `${(distanceInKm * 1000).toFixed(0)} m`;
-    }
-    return `${distanceInKm.toFixed(2)} km`;
-  };
-
-  const formatArea = (areaInSqMeters) => {
-    if (areaInSqMeters < 10000) {
-      return `${areaInSqMeters.toFixed(0)} m²`;
-    }
-    return `${(areaInSqMeters / 1000000).toFixed(2)} km²`;
-  };
+  }, []);
 
   /**
    * Tạo marker cho distance (trên các cạnh)
@@ -117,7 +100,6 @@ export const useMeasurementOverlay = (mapRef) => {
   /**
    * Update measurements cho tất cả features
    */
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const updateMeasurements = useCallback((features) => {
     const map = mapRef.current.single;
     if (!map || !features) return;
@@ -207,12 +189,12 @@ export const useMeasurementOverlay = (mapRef) => {
         }
       }
     });
-  }, []); // Empty dependencies - chỉ tạo function một lần
+  }, [createAreaMarker, createDistanceMarker, mapRef]);
 
   // Cleanup khi component unmount
   useEffect(() => {
     return () => clearMarkers();
-  }, []);
+  }, [clearMarkers]);
 
   return {
     updateMeasurements,

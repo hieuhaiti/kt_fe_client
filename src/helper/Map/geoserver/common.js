@@ -81,6 +81,12 @@ export const buildOgcPointLayerIds = (sourceId) => ({
   point: `ogc-${sourceId}-point`,
 });
 
+export const buildOgcVectorLayerIds = (sourceId) => ({
+  fill: `ogc-${sourceId}-fill`,
+  outline: `ogc-${sourceId}-outline`,
+  line: `ogc-${sourceId}-line`,
+});
+
 export const getOgcGeometryPriority = (geometryType) => {
   const type = String(geometryType || "").toLowerCase();
   if (type.includes("raster")) return GEOSERVER_LAYER_ORDER_PRIORITY.RASTER;

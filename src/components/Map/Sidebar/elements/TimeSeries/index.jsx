@@ -107,6 +107,8 @@ function TimelinePanel({ group, onClose }) {
     [group.code, setPanelState],
   );
 
+  const legend = timeline?.legend || timeline?.group?.legend || group?.legend || null;
+
   useEffect(() => {
     const step = steps[stepIndex];
     if (!step?.geoserver_layer) return;
@@ -119,8 +121,9 @@ function TimelinePanel({ group, onClose }) {
       step,
       tileUrl,
       opacity: 0.85,
+      legend,
     });
-  }, [stepIndex, steps, group, setTimeSeriesLayer]);
+  }, [stepIndex, steps, group, legend, setTimeSeriesLayer]);
 
   useEffect(() => {
     if (!isPlaying || steps.length < 2) return undefined;

@@ -23,6 +23,7 @@ import {
   addOrUpdateGeoServerLayer,
   buildOgcFeatureInfoUrl,
   buildOgcPointLayerIds,
+  buildOgcVectorLayerIds,
   buildOgcSourceId,
   isOgcPointGeometry,
   removeCategoryLayer,
@@ -564,12 +565,6 @@ export default function MapComponent() {
         },
       );
 
-      Object.entries(ogcLayersDataRef.current || {}).forEach(
-        ([sourceId, layer]) => {
-          addOrUpdateGeoServerLayer(map, sourceId, layer, true);
-        },
-      );
-
       Object.entries(timeSeriesLayersDataRef.current || {}).forEach(
         ([groupCode, entry]) => {
           if (entry?.tileUrl) {
@@ -603,12 +598,6 @@ export default function MapComponent() {
               true,
               icon,
             );
-          },
-        );
-
-        Object.entries(ogcLayersDataRef.current || {}).forEach(
-          ([sourceId, layer]) => {
-            addOrUpdateGeoServerLayer(splitMap, sourceId, layer, true);
           },
         );
 
@@ -847,48 +836,96 @@ export default function MapComponent() {
   const prevOgcKeysRef = useRef(new Set());
 
   useEffect(() => {
-    const map = mapRef.current.single;
-    if (!map || !mapsReady.single) return;
+    const singleMap = mapRef.current.single;
+    if (!singleMap || !mapsReady.single) return;
 
-    const currentKeys = new Set(Object.keys(ogcLayersData));
-    const prevKeys = prevOgcKeysRef.current;
+    const currentKeys = new Set(Object.keys(ogcLayersData || {}));
+    const previousKeys = prevOgcKeysRef.current;
+    const maps = [singleMap, mapRef.current.split].filter(Boolean);
+    const mapStates = new Map();
 
-    currentKeys.forEach((sourceId) => {
-      addOrUpdateGeoServerLayer(map, sourceId, ogcLayersData[sourceId], true);
-    });
+    const getViewportBbox = (map) => {
+      const bounds = map.getBounds();
+      return [
+        bounds.getWest(),
+        bounds.getSouth(),
+        bounds.getEast(),
+        bounds.getNorth(),
+      ].join(",");
+    };
 
-    prevKeys.forEach((sourceId) => {
-      if (!currentKeys.has(sourceId)) {
-        removeGeoServerLayer(map, sourceId);
-      }
-    });
+    const isVectorLayer = (layer) => {
+      const geometryType = String(layer?.geometry_type || "").toLowerCase();
+      return !geometryType.includes("raster") && !isOgcPointGeometry(geometryType);
+    };
 
-    const splitMap = mapRef.current.split;
-    if (splitMap) {
-      const applyToSplit = () => {
-        currentKeys.forEach((sourceId) => {
-          addOrUpdateGeoServerLayer(
-            splitMap,
-            sourceId,
-            ogcLayersData[sourceId],
-            true,
-          );
+    const loadMapLayers = (map) => {
+      const state = mapStates.get(map);
+      if (!state || map._removed) return;
+
+      state.generation += 1;
+      state.controllers.forEach((controller) => controller.abort());
+      state.controllers.clear();
+      const generation = state.generation;
+      const bbox = getViewportBbox(map);
+
+      currentKeys.forEach((sourceId) => {
+        const layer = ogcLayersData[sourceId];
+        if (!layer) return;
+
+        const controller = isVectorLayer(layer) ? new AbortController() : null;
+        if (controller) state.controllers.set(sourceId, controller);
+
+        addOrUpdateGeoServerLayer(map, sourceId, layer, true, {
+          bbox,
+          ...(controller ? { signal: controller.signal } : {}),
+          isCurrent: () => state.generation === generation,
         });
-        prevKeys.forEach((sourceId) => {
-          if (!currentKeys.has(sourceId)) {
-            removeGeoServerLayer(splitMap, sourceId);
-          }
-        });
+      });
+    };
+
+    maps.forEach((map) => {
+      const state = {
+        controllers: new Map(),
+        generation: 0,
+        moveTimer: null,
       };
+      mapStates.set(map, state);
 
-      if (splitMap.isStyleLoaded()) {
-        applyToSplit();
+      previousKeys.forEach((sourceId) => {
+        if (!currentKeys.has(sourceId)) removeGeoServerLayer(map, sourceId);
+      });
+
+      const handleMoveEnd = () => {
+        if (state.moveTimer) window.clearTimeout(state.moveTimer);
+        state.moveTimer = window.setTimeout(() => {
+          state.moveTimer = null;
+          loadMapLayers(map);
+        }, 250);
+      };
+      state.handleMoveEnd = handleMoveEnd;
+      map.on("moveend", handleMoveEnd);
+
+      if (map.isStyleLoaded()) {
+        loadMapLayers(map);
       } else {
-        splitMap.once("style.load", applyToSplit);
+        state.handleStyleLoad = () => loadMapLayers(map);
+        map.once("style.load", state.handleStyleLoad);
       }
-    }
+    });
 
     prevOgcKeysRef.current = currentKeys;
+
+    return () => {
+      mapStates.forEach((state, map) => {
+        state.generation += 1;
+        state.controllers.forEach((controller) => controller.abort());
+        state.controllers.clear();
+        if (state.moveTimer) window.clearTimeout(state.moveTimer);
+        map.off("moveend", state.handleMoveEnd);
+        if (state.handleStyleLoad) map.off("style.load", state.handleStyleLoad);
+      });
+    };
   }, [ogcLayersData, mapsReady.single]);
 
   // Đồng bộ time-series raster layers (client tự build tileUrl từ geoserver_layer)
@@ -1026,21 +1063,29 @@ export default function MapComponent() {
       if (!activeLayers.length) return;
 
       for (const layer of activeLayers) {
-        const url = buildOgcFeatureInfoUrl(map, layer, event.point);
-        if (!url) continue;
+        const sourceId = buildOgcSourceId(layer);
+        const layerIds = Object.values(buildOgcVectorLayerIds(sourceId)).filter((id) => map.getLayer(id));
+        const renderedFeatures = layerIds.length
+          ? map.queryRenderedFeatures(event.point, { layers: layerIds })
+          : [];
+        const renderedFeature = renderedFeatures[0];
+        if (renderedFeature) {
+          useModalMapLayerStore
+            .getState()
+            .openModal(mapOgcFeatureToModalData(renderedFeature, layer));
+          return;
+        }
+
+        const identifyUrl = buildOgcFeatureInfoUrl(map, layer, event.point);
+        if (!identifyUrl) continue;
 
         try {
-          const response = await fetch(url);
-          if (!response.ok) {
-            continue;
-          }
-
+          const response = await fetch(identifyUrl);
+          if (!response.ok) continue;
           const data = await response.json();
           const feature = data?.features?.[0];
           if (!feature) continue;
-
           if (disposed) return;
-
           useModalMapLayerStore
             .getState()
             .openModal(mapOgcFeatureToModalData(feature, layer));

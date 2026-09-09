@@ -29,7 +29,19 @@ export const buildWfsFeatureUrl = (
     count: String(count),
   });
 
-  if (bbox) params.set("bbox", bbox);
+  if (bbox) {
+    // GeoServer WFS 2.0.0 / 1.1.0: if bbox is minLng,minLat,maxLng,maxLat without CRS,
+    // GeoServer uses srsName (EPSG:4326) which expects minLat,minLng,maxLat,maxLng!
+    // Appending urn:ogc:def:crs:OGC:1.3:CRS84 forces GeoServer to treat bbox as minLng,minLat,maxLng,maxLat.
+    const hasCrs =
+      bbox.includes("urn:ogc") ||
+      bbox.includes("EPSG:") ||
+      bbox.includes("CRS");
+    const formattedBbox = hasCrs
+      ? bbox
+      : `${bbox},urn:ogc:def:crs:OGC:1.3:CRS84`;
+    params.set("bbox", formattedBbox);
+  }
 
   return `${buildGeoServerWorkspaceUrl(
     geoserverUrl,
@@ -69,6 +81,9 @@ const explodeMultiFeatures = (features) => {
   return out;
 };
 
+// [check style] TEMP import
+import { checkStyleLog } from "@/lib/checkStyleDebug";
+
 export const fetchWfsGeoJson = async (layer, options = {}) => {
   const { signal, ...requestOptions } = options;
   const url = buildWfsFeatureUrl(layer, requestOptions);
@@ -76,16 +91,50 @@ export const fetchWfsGeoJson = async (layer, options = {}) => {
     return { type: "FeatureCollection", features: [] };
   }
 
+  // [check style] TEMP log
+  checkStyleLog("wfs.request", {
+    layerCode: layer?.code,
+    url,
+    geoserver_layer: layer?.geoserver_layer,
+  });
+
   const response = await fetch(url, { signal });
   if (!response.ok) {
+    // [check style] TEMP log
+    checkStyleLog("wfs.response.http_error", {
+      layerCode: layer?.code,
+      status: response.status,
+      statusText: response.statusText,
+    }, "warn");
     throw new Error(`GeoServer WFS ${response.status}`);
   }
 
-  const data = await response.json();
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (parseErr) {
+    // [check style] TEMP log: GeoServer trả về XML ExceptionReport thay vì JSON
+    checkStyleLog("wfs.response.xml_exception", {
+      layerCode: layer?.code,
+      snippet: text.slice(0, 300),
+    }, "warn");
+    throw new Error(`GeoServer WFS XML: ${text.slice(0, 150)}`);
+  }
+
   const rawFeatures =
     data?.type === "FeatureCollection"
       ? Array.isArray(data.features) ? data.features : []
       : Array.isArray(data?.features) ? data.features : [];
 
-  return { type: "FeatureCollection", features: explodeMultiFeatures(rawFeatures) };
+  const exploded = explodeMultiFeatures(rawFeatures);
+
+  // [check style] TEMP log
+  checkStyleLog("wfs.response.success", {
+    layerCode: layer?.code,
+    rawCount: rawFeatures.length,
+    explodedCount: exploded.length,
+  });
+
+  return { type: "FeatureCollection", features: exploded };
 };

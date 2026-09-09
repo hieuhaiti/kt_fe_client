@@ -19,6 +19,8 @@ import { useDataLayerStore } from "@/stores/Map/Sidebar/useDataLayerStore";
 import { useMapStore } from "@/stores/Map/useMapStore";
 import { useGetMapLayersQuery } from "@/services/mapLayersService";
 import { buildOgcSourceId } from "@/helper/Map/MapHelper";
+// [check style] TEMP import
+import { checkStyleLog } from "@/lib/checkStyleDebug";
 
 const UNCATEGORIZED_KEY = "__uncategorized__";
 const UNCATEGORIZED_LABEL = "Khác";
@@ -199,6 +201,13 @@ export function LayerSelection() {
   }, [overlayQuery.data, basemapQuery.data]);
 
   useEffect(() => {
+    // [check style] TEMP log
+    checkStyleLog("catalog.sync", {
+      totalReceived: mapLayers.length,
+      layersWithCustomStyle: mapLayers
+        .filter((l) => l.default_style && Object.keys(l.default_style).length > 0)
+        .map((l) => ({ code: l.code, default_style: l.default_style })),
+    });
     setOgcLayerState(mapLayers);
   }, [mapLayers, setOgcLayerState]);
 

@@ -17,9 +17,20 @@ import {
   getDefaultRasterOpacity,
   getOgcGeometryPriority,
   getOgcLayerName,
+  hasCustomVectorStyle,
   isOgcPointGeometry,
+  isOgcPolygonGeometry,
+  isOgcLineGeometry,
   toMapboxStyle,
 } from "@/helper/Map/geoserver";
+// [check style] TEMP import
+import { checkStyleLog } from "@/lib/checkStyleDebug";
+
+export {
+  hasCustomVectorStyle,
+  isOgcPolygonGeometry,
+  isOgcLineGeometry,
+};
 
 // Helper function to calculate bounds from coordinates
 export const getBounds = (coordinates) => {
@@ -1436,25 +1447,38 @@ const addOrUpdateGeoServerVectorLayer = async (map, sourceId, layer, visible = t
     const fillPaint = {
       'fill-color': '#F0F0F0',
       'fill-opacity': 0.15,
-      ...(style.paint['fill-color'] !== undefined ? { 'fill-color': style.paint['fill-color'] } : {}),
-      ...(style.paint['fill-opacity'] !== undefined ? { 'fill-opacity': style.paint['fill-opacity'] } : {}),
-      ...(style.paint['fill-antialias'] !== undefined ? { 'fill-antialias': style.paint['fill-antialias'] } : {}),
+      ...(style.fillPaint || {}),
+      ...(style.paint && style.paint['fill-color'] !== undefined ? { 'fill-color': style.paint['fill-color'] } : {}),
+      ...(style.paint && style.paint['fill-opacity'] !== undefined ? { 'fill-opacity': style.paint['fill-opacity'] } : {}),
+      ...(style.paint && style.paint['fill-antialias'] !== undefined ? { 'fill-antialias': style.paint['fill-antialias'] } : {}),
     };
     const linePaint = {
       'line-color': '#333333',
       'line-width': 2,
-      ...(style.paint['line-color'] !== undefined ? { 'line-color': style.paint['line-color'] } : {}),
-      ...(style.paint['line-opacity'] !== undefined ? { 'line-opacity': style.paint['line-opacity'] } : {}),
-      ...(style.paint['line-width'] !== undefined ? { 'line-width': style.paint['line-width'] } : {}),
-      ...(style.paint['line-blur'] !== undefined ? { 'line-blur': style.paint['line-blur'] } : {}),
-      ...(style.paint['line-dasharray'] !== undefined ? { 'line-dasharray': style.paint['line-dasharray'] } : {}),
-      ...(style.paint['line-offset'] !== undefined ? { 'line-offset': style.paint['line-offset'] } : {}),
+      ...(geometryType === 'polygon' ? (style.outlinePaint || {}) : (style.linePaint || {})),
+      ...(style.paint && style.paint['line-color'] !== undefined ? { 'line-color': style.paint['line-color'] } : {}),
+      ...(style.paint && style.paint['line-opacity'] !== undefined ? { 'line-opacity': style.paint['line-opacity'] } : {}),
+      ...(style.paint && style.paint['line-width'] !== undefined ? { 'line-width': style.paint['line-width'] } : {}),
+      ...(style.paint && style.paint['line-blur'] !== undefined ? { 'line-blur': style.paint['line-blur'] } : {}),
+      ...(style.paint && style.paint['line-dasharray'] !== undefined ? { 'line-dasharray': style.paint['line-dasharray'] } : {}),
+      ...(style.paint && style.paint['line-offset'] !== undefined ? { 'line-offset': style.paint['line-offset'] } : {}),
     };
+
+    // [check style] TEMP log
+    checkStyleLog("vector.paint.computed", {
+      layerCode: layer?.code,
+      geometryType,
+      featureCount: Array.isArray(geojson?.features) ? geojson.features.length : 0,
+      inputDefaultStyle: layer?.default_style,
+      computedFillPaint: fillPaint,
+      computedLinePaint: linePaint,
+    });
+
     const lineLayout = {
       visibility,
       'line-join': 'round',
       'line-cap': 'round',
-      ...(style.layout || {}),
+      ...(style.lineLayout || style.layout || {}),
     };
     const layerDefinitions = geometryType === 'polygon'
       ? [
@@ -1472,9 +1496,11 @@ const addOrUpdateGeoServerVectorLayer = async (map, sourceId, layer, visible = t
         map.addLayer({ ...definition, source: sourceId, metadata }, beforeId);
       }
     });
+    return true;
   } catch (error) {
-    if (error?.name === 'AbortError') return;
+    if (error?.name === 'AbortError') return true;
     console.warn('Lỗi khi thêm/cập nhật OGC vector layer:', error.message);
+    return false;
   }
 };
 
@@ -1700,15 +1726,72 @@ export const addOrUpdateGeoServerLayer = async (
   options = {},
 ) => {
   const isPoint = isOgcPointGeometry(layer?.geometry_type);
-  const isRaster = String(layer?.geometry_type || '').toLowerCase().includes('raster');
   if (isPoint) {
+    // [check style] TEMP log
+    checkStyleLog("render.branch", {
+      branch: "point_wfs",
+      layerCode: layer?.code,
+      sourceId,
+      geometry_type: layer?.geometry_type,
+      default_style: layer?.default_style,
+    });
     await addOrUpdateGeoServerPointLayer(map, sourceId, layer, visible);
     return;
   }
-  if (!isRaster) {
-    await addOrUpdateGeoServerVectorLayer(map, sourceId, layer, visible, options);
-    return;
+
+  const isVector =
+    isOgcPolygonGeometry(layer?.geometry_type) ||
+    isOgcLineGeometry(layer?.geometry_type);
+
+  const hasCustom = hasCustomVectorStyle(layer?.default_style);
+
+  // [check style] TEMP log
+  checkStyleLog("render.branch", {
+    branch: isVector && hasCustom ? "vector_wfs_custom" : "raster_wms",
+    layerCode: layer?.code,
+    sourceId,
+    geometry_type: layer?.geometry_type,
+    isVector,
+    hasCustomVectorStyle: hasCustom,
+    default_style: layer?.default_style,
+  });
+
+  if (isVector && hasCustom) {
+    const rasterLayerId = buildOgcLayerId(sourceId);
+    if (map?.getLayer(rasterLayerId)) {
+      map.removeLayer(rasterLayerId);
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+    }
+    const vectorSuccess = await addOrUpdateGeoServerVectorLayer(map, sourceId, layer, visible, options);
+    if (vectorSuccess !== false) {
+      return;
+    }
+    // [check style] TEMP log: WFS không có feature hoặc GeoServer không publish WFS -> fallback sang WMS
+    checkStyleLog("render.fallback_to_wms", {
+      layerCode: layer?.code,
+      reason: "WFS failed or returned 0 features; fallback to WMS raster tile",
+    }, "warn");
   }
+
+  // If previous vector layers exist for this sourceId, clean them up before switching to raster WMS
+  const vectorLayerIds = buildOgcVectorLayerIds(sourceId);
+  if (
+    map?.getLayer(vectorLayerIds.fill) ||
+    map?.getLayer(vectorLayerIds.outline) ||
+    map?.getLayer(vectorLayerIds.line)
+  ) {
+    [vectorLayerIds.fill, vectorLayerIds.outline, vectorLayerIds.line].forEach(
+      (lid) => {
+        if (map.getLayer(lid)) map.removeLayer(lid);
+      },
+    );
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
+  }
+
   addOrUpdateGeoServerWmsLayer(map, sourceId, layer, visible);
 };
 

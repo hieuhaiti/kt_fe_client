@@ -1,5 +1,7 @@
 import { tokenManager } from "@/lib/tokenManager";
 import { emitSessionExpired } from "@/lib/sessionEvents";
+// [check style] TEMP import
+import { checkStyleLog } from "@/lib/checkStyleDebug";
 
 const API_BASE_URL = (import.meta.env.VITE_BASE_URL_BE || "")
   .trim()
@@ -168,8 +170,39 @@ export async function apiRequest(endpoint, options = {}) {
     markSessionExpired();
   }
 
+  const isMapLayer = endpoint.includes("/map/layers");
+  if (isMapLayer) {
+    // [check style] TEMP log
+    checkStyleLog("http.request", {
+      endpoint,
+      url,
+      method: options.method || "GET",
+    });
+  }
+
   const payload = await parseResponse(response);
-  if (!response.ok) throw createApiError(response, payload, url);
+  if (!response.ok) {
+    if (isMapLayer) {
+      // [check style] TEMP log
+      checkStyleLog("http.response.error", {
+        endpoint,
+        status: response.status,
+        payload,
+      }, "warn");
+    }
+    throw createApiError(response, payload, url);
+  }
+
+  if (isMapLayer) {
+    // [check style] TEMP log
+    checkStyleLog("http.response.success", {
+      endpoint,
+      status: response.status,
+      itemCount: Array.isArray(payload?.data?.items) ? payload.data.items.length : undefined,
+      firstItemStyle: payload?.data?.items?.[0]?.default_style,
+    });
+  }
+
   return payload;
 }
 

@@ -98,6 +98,12 @@ export const getOgcGeometryPriority = (geometryType) => {
 export const isOgcPointGeometry = (geometryType) =>
   String(geometryType || "").toLowerCase().includes("point");
 
+export const isOgcPolygonGeometry = (geometryType) =>
+  String(geometryType || "").toLowerCase().includes("poly");
+
+export const isOgcLineGeometry = (geometryType) =>
+  String(geometryType || "").toLowerCase().includes("line");
+
 export const lngLatToWebMercator = ({ lng, lat }) => {
   const x = (lng * 20037508.34) / 180;
   const boundedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));

@@ -110,7 +110,7 @@ export default function Header() {
           >
             <ShieldUser className="size-8 text-(--brand-lime) transition-transform group-hover:scale-110" />
             {!isLargeDesktop && (
-              <span className="text-xl font-bold text-foreground transition-colors group-hover:text-(--brand-lime)">
+              <span className="hidden sm:inline text-xl font-bold text-foreground transition-colors group-hover:text-(--brand-lime)">
                 WebGIS Kon Tum
               </span>
             )}
@@ -143,9 +143,10 @@ export default function Header() {
             })}
           </nav>
 
-          <div className="relative flex flex-1 justify-center lg:hidden">
+          <div className="relative flex justify-center lg:hidden">
             <Button
               type="button"
+              size="sm"
               onClick={() => setIsOpen((value) => !value)}
               aria-expanded={isOpen}
               aria-label="Mở menu điều hướng"

@@ -270,7 +270,7 @@ export default function Header() {
                             variant="ghost"
                             className="h-auto w-full justify-start px-4 py-2"
                             onClick={() =>
-                              openExternalLink("/uploads/KT_HDSD_Client.pdf")
+                              openExternalLink("/uploads/HDSD_ADMIN_CAMPHA.pdf")
                             }
                           >
                             <Book />

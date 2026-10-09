@@ -18,7 +18,7 @@ export const useMapStore = create((set, get) => ({
   isSplitMode: false,
 
   // Sidebar - panel đang active (chia sẻ giữa floating icon bar và content panel)
-  activePanel: null,
+  activePanel: "layers",
   setActivePanel: (activePanel) => set({ activePanel }),
 
   setMapRef: (mapInstance) => {

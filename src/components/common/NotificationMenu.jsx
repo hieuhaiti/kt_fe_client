@@ -145,7 +145,7 @@ export default function NotificationMenu({ enabled = true }) {
               className="text-xs"
             >
               <CheckCheck />
-              Đọc tất cả
+              Đánh dấu tất cả đã đọc
             </Button>
           )}
         </div>

@@ -12,7 +12,7 @@ export default function BadRequestPage() {
           Yêu cầu không hợp lệ
         </h1>
         <p className="mt-6 text-lg sm:text-xl font-medium text-muted-foreground">
-          Yêu cầu của bạn không thể xử lý. Vui lòng kiểm tra lại.
+          Không thể xử lý yêu cầu. Hãy kiểm tra thông tin rồi thử lại.
         </p>
         <div className="mt-10 flex items-center justify-center">
           <Button

@@ -9,21 +9,21 @@ import {
  */
 export const LAYER_CONFIG = {
   rgb: {
-    label: "Ảnh Màu",
+    label: "Ảnh màu",
     color: "bg-blue-500",
     service: getRgbComposite,
-    description: "Ảnh tổng hợp màu gốc (RGB)",
+    description: "Ảnh màu tự nhiên (RGB)",
     supportCompare: true,
   },
   ndvi: {
-    label: "Ảnh NDVI",
+    label: "Chỉ số thực vật (NDVI)",
     color: "bg-green-500",
     service: getNdvi,
     description: "Chỉ số thực vật NDVI",
     supportCompare: true,
   },
   heatmap: {
-    label: "Ảnh Nhiệt",
+    label: "Ảnh nhiệt",
     color: "bg-purple-500",
     service: getHeatmap,
     description: "Nhiệt độ bề mặt (LST)",

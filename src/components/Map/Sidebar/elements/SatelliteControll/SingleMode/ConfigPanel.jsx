@@ -293,12 +293,7 @@ function ConfigPanel() {
             <h4 className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
               {LABELS.settings}
             </h4>
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-xs text-foreground/60 shrink-0">
-                {LABELS.collection}
-              </label>
-            </div>
-            <div>
+              <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs text-foreground/60">
                   {LABELS.cloudCover}
@@ -317,10 +312,6 @@ function ConfigPanel() {
                 className="w-full"
               />
             </div>
-            <p className="text-[10px] text-foreground/40 leading-relaxed">
-              Nguồn dữ liệu và tỷ lệ mây chỉ áp dụng cho Ảnh Màu, Chỉ số thực
-              vật và Ảnh Nhiệt.
-            </p>
           </div>
 
           {/* Action Buttons */}

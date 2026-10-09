@@ -35,7 +35,7 @@ const FALLBACK_LEGENDS = {
     { label: "Trung bình (25–30°C)", color: "#e0f3f8" },
     { label: "Ấm (thực vật thưa)", color: "#fee090" },
     { label: "Nóng (đất trống, đô thị)", color: "#f46d43" },
-    { label: "Rất nóng (mát đường, mái tôn)", color: "#a50026" },
+    { label: "Rất nóng (mặt đường, mái tôn)", color: "#a50026" },
   ],
   classified: [
     { label: "Đất khác", color: "#FFBEE8" },
@@ -52,10 +52,10 @@ const FALLBACK_LEGENDS = {
   ],
   change: [
     { label: "Không đổi", color: "#808080" },
-    { label: "ALERT: Giảm thảm thực vật", color: "#FF0000" },
-    { label: "ALERT: Tăng thảm thực vật", color: "#00FF00" },
-    { label: "ALERT: Mở đường / Xây dựng", color: "#00FFFF" },
-    { label: "ALERT: Giảm thực vật + Mở đường", color: "#FF00FF" },
+    { label: "Cảnh báo: Giảm thảm thực vật", color: "#FF0000" },
+    { label: "Cảnh báo: Tăng thảm thực vật", color: "#00FF00" },
+    { label: "Cảnh báo: Mở đường hoặc xây dựng", color: "#00FFFF" },
+    { label: "Cảnh báo: Giảm thực vật và mở đường", color: "#FF00FF" },
   ],
 };
 

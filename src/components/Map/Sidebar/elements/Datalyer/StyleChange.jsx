@@ -41,9 +41,9 @@ export function StyleChange() {
       {/* Map Style Selection */}
       {clickedPointMode && (
         <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-          <span className="font-medium">Chế độ xem AQI đang bật.</span>
+          <span className="font-medium">Đang xem chất lượng không khí.</span>
           <br />
-          <span className="text-xs">Tắt chế độ để thay đổi kiểu bản đồ.</span>
+          <span className="text-xs">Tắt chế độ này để đổi kiểu bản đồ.</span>
         </div>
       )}
       <div className="grid grid-cols-2 gap-2">
@@ -84,7 +84,7 @@ export function StyleChange() {
 
               <TooltipContent>
                 {clickedPointMode
-                  ? "Tắt chế độ AQI để thay đổi"
+                  ? "Tắt xem chất lượng không khí để đổi kiểu bản đồ"
                   : mapStyle.description}
               </TooltipContent>
             </Tooltip>
@@ -113,7 +113,7 @@ export function StyleChange() {
               Hiển thị địa hình 3D
             </span>
             <span className="text-xs text-muted-foreground">
-              Bật/tắt hiển thị địa hình 3D
+              Bật hoặc tắt địa hình 3D
             </span>
           </div>
           {terrainLoading && <LoadingInline size="small" />}

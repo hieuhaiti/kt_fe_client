@@ -3,7 +3,7 @@
  */
 const exportMapAsPNG = async (mapRef, filename = "map.png") => {
   if (!mapRef || !mapRef.single || !mapRef.single.getCanvas()) {
-    toast.error("Bản đồ không khả dụng để xuất.");
+    toast.error("Chưa thể lưu ảnh bản đồ.");
     return;
   }
 
@@ -13,7 +13,7 @@ const exportMapAsPNG = async (mapRef, filename = "map.png") => {
     // Get current canvas data as PNG
     canvas.toBlob((blob) => {
       if (!blob) {
-        toast.error("Không thể tạo blob từ canvas");
+        toast.error("Không thể lưu ảnh bản đồ. Hãy thử lại.");
         return;
       }
 
@@ -28,7 +28,7 @@ const exportMapAsPNG = async (mapRef, filename = "map.png") => {
       URL.revokeObjectURL(url);
     }, "image/png");
   } catch (error) {
-    toast.error("Lỗi khi xuất bản đồ: " + error.message);
+    toast.error("Không thể lưu ảnh bản đồ. Hãy thử lại.");
     throw error;
   }
 };
@@ -63,7 +63,7 @@ export function MapToolbar({ mapRef }) {
   };
 
   return (
-    <div className="absolute top-2 left-2 z-10 flex items-center gap-2 pointer-events-auto">
+    <div className="absolute top-14 sm:top-2 left-2 z-10 flex items-center gap-2 pointer-events-auto">
       {/* Export Actions */}
       <div className="flex items-center gap-1 p-1 rounded-lg bg-card/90 backdrop-blur-sm border border-border">
         <Tooltip>
@@ -73,12 +73,12 @@ export function MapToolbar({ mapRef }) {
               size="icon-sm"
               onClick={handleExportPNG}
               disabled={isExporting}
-              aria-label="Xuất bản đồ dưới dạng PNG"
+              aria-label="Lưu ảnh bản đồ (PNG)"
             >
               <Download className="w-4 h-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Xuất bản đồ dưới dạng PNG</TooltipContent>
+          <TooltipContent>Lưu ảnh bản đồ (PNG)</TooltipContent>
         </Tooltip>
 
         {/* Toggle clickedPoint mode - click on map to get AQI info */}
@@ -90,8 +90,8 @@ export function MapToolbar({ mapRef }) {
               onClick={toggleClickedPointMode}
               aria-label={
                 clickedPointMode
-                  ? "Tắt chế độ xem chất lượng không khí"
-                  : "Bật chế độ xem chất lượng không khí"
+                  ? "Tắt xem chất lượng không khí"
+                  : "Xem chất lượng không khí"
               }
             >
               <MapPinned className="w-4 h-4" />
@@ -99,8 +99,8 @@ export function MapToolbar({ mapRef }) {
           </TooltipTrigger>
           <TooltipContent>
             {clickedPointMode
-              ? "Tắt chế độ xem chất lượng không khí"
-              : "Bật chế độ xem chất lượng không khí (click vào bản đồ)"}
+              ? "Tắt xem chất lượng không khí"
+              : "Bật rồi chọn một điểm để xem chất lượng không khí"}
           </TooltipContent>
         </Tooltip>
       </div>

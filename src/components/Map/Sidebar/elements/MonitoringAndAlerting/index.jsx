@@ -1335,7 +1335,7 @@ export function MonitoringAndAlerting() {
       if (requestAbortRef.current === controller) {
         setError(
           timedOut
-            ? "Yêu cầu dữ liệu cảnh báo cháy đã quá thời gian chờ."
+            ? "Tải dữ liệu cảnh báo quá lâu. Hãy thử lại."
             : err?.message || "Không thể tải dữ liệu cảnh báo cháy rừng.",
         );
       }
@@ -1675,7 +1675,7 @@ export function MonitoringAndAlerting() {
           )}
         </div>
 
-        {/* History browser — collapsible độc lập ngang hàng "Cơ chế dữ liệu".
+        {/* History browser — collapsible độc lập ngang hàng "Nguồn dữ liệu và cách tính".
             Đặt ngoài `{view && ...}` để user vẫn xem lịch sử được khi latest
             snapshot đang tính toán (view=null). `currentSnapshotId` optional. */}
         <FireRiskHistoryBrowser
@@ -1718,7 +1718,7 @@ export function MonitoringAndAlerting() {
             <div className="grid grid-cols-1 gap-2 @[280px]/fire:grid-cols-2">
               <KpiCard
                 icon={<ShieldAlert className="h-3.5 w-3.5" />}
-                label="Cấp Trung Bình Toàn Tỉnh"
+                label="Cấp trung bình toàn tỉnh"
                 valueColor={
                   getRiskMeta(
                     Math.round(view.avgRiskLevel || view.maxLevel || 1),
@@ -1736,14 +1736,10 @@ export function MonitoringAndAlerting() {
               <KpiCard
                 labelNode={
                   <LabelWithTooltip
-                    label="S2 phủ"
+                    label="Diện tích có ảnh Sentinel-2"
                     tip={
                       <>
-                        <b>S2 phủ (Sentinel-2 coverage)</b> — tỷ lệ % diện tích
-                        tỉnh có ảnh Sentinel-2 hợp lệ (đã mask mây) trong cửa sổ
-                        30 ngày trước ngày phân tích. Dưới 60% nghĩa là nhiều
-                        mây/thiếu ảnh → cấp cảnh báo chỉ là tham khảo, chờ ảnh
-                        mới để đánh giá lại.
+                        <b>Diện tích có ảnh Sentinel-2</b> — tỷ lệ diện tích có ảnh hợp lệ sau khi loại mây trong 30 ngày trước ngày phân tích. Nếu dưới 60%, chỉ nên tham khảo cấp nguy cơ và chờ ảnh mới.
                       </>
                     }
                   />
@@ -1775,7 +1771,7 @@ export function MonitoringAndAlerting() {
                   </p>
                   {levelsWithArea.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground">
-                      Không có ha theo cấp
+                      Chưa có số liệu diện tích theo cấp nguy cơ.
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
@@ -1851,7 +1847,7 @@ export function MonitoringAndAlerting() {
                             </span>
                             <span
                               className="text-[10px] tabular-nums whitespace-nowrap text-muted-foreground"
-                              title="Sentinel-2 coverage"
+                              title="Tỷ lệ diện tích có ảnh Sentinel-2"
                             >
                               S2 {fmtPct(d.s2Coverage)}
                             </span>
@@ -1938,12 +1934,12 @@ export function MonitoringAndAlerting() {
               }}
             />
 
-            {/* History browser đã move lên trên (ngang "Cơ chế dữ liệu"). */}
+            {/* History browser đã move lên trên (ngang "Nguồn dữ liệu và cách tính"). */}
 
             {/* Chú giải cấp — 1 cột khi hẹp, 2 cột khi rộng */}
             <div className="rounded-lg border border-border bg-card/40 p-3">
               <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
-                Chú giải cấp cháy
+                Chú giải nguy cơ cháy rừng
               </p>
               <div className="grid grid-cols-1 gap-1.5 @[380px]/fire:grid-cols-2">
                 {[1, 2, 3, 4, 5].map((l) => {
@@ -2031,7 +2027,7 @@ function FireRiskLayerManager({
       : []),
     {
       id: "heat",
-      label: "Bản đồ nhiệt cảnh báo cháy rừng",
+      label: "Vùng nguy cơ cháy rừng",
       description: districtProgress,
       dot: "bg-orange-500",
       visible: layerVisible.heat,
@@ -2085,7 +2081,7 @@ function FireRiskLayerManager({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-55">
-            Khôi phục hiển thị mặc định và gỡ các lớp lịch sử.
+            Khôi phục lớp mặc định và gỡ lớp lịch sử.
           </TooltipContent>
         </Tooltip>
       </div>
@@ -2250,7 +2246,7 @@ function FireRiskHistoryBrowser({
         >
           <span className="flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5" />
-            Cơ chế dữ liệu
+            Nguồn dữ liệu và cách tính
           </span>
           <span className="text-[10px] font-normal text-blue-700 dark:text-blue-300">
             {mechExpanded ? "Ẩn" : "Xem"}
@@ -2262,25 +2258,23 @@ function FireRiskHistoryBrowser({
               <b>Mô hình</b>: Random Forest.
             </li>
             <li>
-              <b>Tập dữ liệu đào tạo</b>: MCD64A1 + FireCCI51 + FIRMS (20 tháng
+              <b>Dữ liệu huấn luyện</b>: MCD64A1 + FireCCI51 + FIRMS (20 tháng
               mùa khô 2019-2023).
             </li>
             <li>
-              <b>Cấp cảnh báo (C1-C5)</b>: NDVI + NDMI + NBR + LST + ERA5 +
-              slope + fuel + Nesterov P. Không phải phân cấp thuần Nesterov theo
-              QĐ 25/2022.
+              <b>Cấp cảnh báo (C1-C5)</b>: dựa trên thực vật, độ ẩm, nhiệt độ, thời tiết, độ dốc, vật liệu cháy và chỉ số Nesterov. Không phải phân cấp chỉ theo Nesterov trong QĐ 25/2022.
             </li>
             <li>
-              <b>Nguồn ảnh</b>: Sentinel-2 cửa sổ trượt, MODIS LST, ERA5-Land.
+              <b>Nguồn ảnh</b>: ảnh Sentinel-2 theo khoảng thời gian, nhiệt độ bề mặt MODIS và thời tiết ERA5-Land.
             </li>
           </ul>
         )}
       </div>
       <div className="rounded-lg border border-blue-200 bg-blue-50 text-[11px] leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-        {/* Cơ chế dữ liệu — collapsible để tiết kiệm không gian sidebar hẹp */}
+        {/* Nguồn dữ liệu và cách tính — collapsible để tiết kiệm không gian sidebar hẹp */}
 
-        {/* Header collapsible — cùng skin "Cơ chế dữ liệu" (blue theme) để user
-          nhận ra section quan trọng, không bị chìm vào các card border-border. */}
+        {/* Header collapsible — cùng kiểu với "Nguồn dữ liệu và cách tính" để người dùng
+          nhận ra mục chọn ngày bản đồ. */}
         <Button
           type="button"
           variant="ghost"
@@ -2301,7 +2295,7 @@ function FireRiskHistoryBrowser({
 
         {isEmpty && (
           <div className="border-t border-blue-200 px-3 py-2 text-[10px] text-blue-700 dark:border-blue-900 dark:text-blue-300">
-            Chưa có dữ liệu lịch sử sẵn sàng để hiển thị.
+            Chưa có bản đồ lịch sử để xem.
           </div>
         )}
 
@@ -2325,7 +2319,7 @@ function FireRiskHistoryBrowser({
                     size="icon-xs"
                     onClick={() => setQuery("")}
                     className="absolute top-1/2 right-1 -translate-y-1/2 text-blue-600 hover:bg-blue-100 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/40"
-                    title="Xoá tìm kiếm"
+                    title="Xóa tìm kiếm"
                   >
                     <X className="h-3 w-3" />
                   </Button>

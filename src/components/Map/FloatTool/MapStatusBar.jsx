@@ -10,7 +10,7 @@ export function MapStatusBar({ lat, lng, zoom }) {
       <div className="flex items-center gap-6 px-4 py-2 rounded-lg bg-card/90 backdrop-blur-sm border border-border">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            LAT:
+            Vĩ độ:
           </span>
           <span className="text-xs font-mono text-foreground">
             {formatCoord(lat, true)}
@@ -19,7 +19,7 @@ export function MapStatusBar({ lat, lng, zoom }) {
 
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            LONG:
+            Kinh độ:
           </span>
           <span className="text-xs font-mono text-foreground">
             {formatCoord(lng, false)}
@@ -28,7 +28,7 @@ export function MapStatusBar({ lat, lng, zoom }) {
 
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            ZOOM:
+            Thu phóng:
           </span>
           <span className="text-xs font-mono text-foreground">
             {zoom?.toFixed(1) || "--"}x

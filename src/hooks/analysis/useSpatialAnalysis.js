@@ -200,10 +200,10 @@ function countVertices(feature) {
 }
 
 const STEP_LABELS = {
-  simplify: "Đơn giản hóa đường biên giới…",
-  buffer: "Tạo vùng đệm polygon…",
-  bbox_filter: "Lọc sơ bộ bounding box…",
-  point_in_polygon: "Kiểm tra điểm trong vùng đệm…",
+  simplify: "Đang chuẩn bị ranh giới…",
+  buffer: "Đang xác định phạm vi khu vực…",
+  bbox_filter: "Đang lọc điểm theo phạm vi…",
+  point_in_polygon: "Đang kiểm tra điểm trong khu vực…",
   done: "Hoàn tất",
 };
 
@@ -215,7 +215,7 @@ const STEP_LABELS = {
  * @property {Object|null} stats - Thống kê (vertices, điểm match, v.v.)
  * @property {number} progress - 0-100
  * @property {string} progressStep - Nhãn bước hiện tại
- * @property {string|null} error - Pesan lỗi nếu có
+ * @property {string|null} error - Thông báo lỗi nếu có
  */
 
 /**

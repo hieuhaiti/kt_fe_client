@@ -26,7 +26,7 @@ const schema = z
       .trim()
       .min(2, "Họ và tên cần ít nhất 2 ký tự.")
       .max(255, "Họ và tên quá dài."),
-    email: z.string().trim().email("Vui lòng nhập đúng địa chỉ email."),
+    email: z.string().trim().email("Email không hợp lệ."),
     phone: z
       .string()
       .trim()
@@ -40,7 +40,7 @@ const schema = z
   })
   .refine((values) => values.password === values.confirmPassword, {
     path: ["confirmPassword"],
-    message: "Mật khẩu xác nhận không khớp.",
+    message: "Mật khẩu nhập lại không khớp.",
   });
 
 const fields = [
@@ -110,9 +110,9 @@ export default function Register() {
 
   return (
     <AuthShell
-      eyebrow="Tham gia WebGIS Kon Tum"
+      eyebrow="WebGIS Kon Tum"
       title="Tạo tài khoản"
-      description="Nhận cảnh báo theo vị trí, lưu thông tin cá nhân và sử dụng các tiện ích dành cho người dân."
+      description="Đăng ký để gửi phản ánh và theo dõi kết quả xử lý."
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -202,11 +202,11 @@ export default function Register() {
         </div>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          Bằng việc đăng ký, bạn đồng ý với{" "}
+          Khi đăng ký, bạn đồng ý với{" "}
           <Link to="/policy" className="font-semibold text-primary">
             chính sách quyền riêng tư
           </Link>{" "}
-          của hệ thống.
+          .
         </p>
 
         <Button

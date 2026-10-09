@@ -49,11 +49,11 @@ export function getIcon(icon, className = "") {
     },
     "04d": {
       el: <Cloud className="text-slate-500" />,
-      label: "Mây vỡ ban ngày",
+      label: "Nhiều mây ban ngày",
     },
     "04n": {
       el: <Cloud className="text-slate-500" />,
-      label: "Mây vỡ ban đêm",
+      label: "Nhiều mây ban đêm",
     },
     "09d": {
       el: <CloudDrizzle className="text-blue-500" />,
@@ -135,21 +135,21 @@ export const AQI_LEVELS = {
     icon: icFaceYellow,
   },
   3: {
-    label: "Không tốt cho nhạy cảm",
+    label: "Không tốt cho nhóm nhạy cảm",
     desc: "Ảnh hưởng nhóm nhạy cảm",
     color: "text-orange-600",
     bg: "bg-orange-100",
     icon: icFaceOrange,
   },
   4: {
-    label: "Không tốt",
+    label: "Xấu",
     desc: "Không khí xấu",
     color: "text-red-600",
     bg: "bg-red-100",
     icon: icFaceRed,
   },
   5: {
-    label: "Rất không tốt",
+    label: "Rất xấu",
     desc: "Không khí rất xấu",
     color: "text-purple-600",
     bg: "bg-purple-100",

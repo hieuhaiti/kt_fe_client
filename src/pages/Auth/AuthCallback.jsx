@@ -12,7 +12,7 @@ export default function AuthCallback() {
   const [status, setStatus] = useState(code ? "loading" : "error");
   const [message, setMessage] = useState(
     code
-      ? "Đang xác thực tài khoản Google và thiết lập phiên làm việc..."
+      ? "Đang đăng nhập bằng Google..."
       : "Liên kết xác thực không hợp lệ hoặc đã hết hạn.",
   );
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ export default function AuthCallback() {
       .then(() => fetchProfile())
       .then(() => {
         setStatus("success");
-        setMessage("Xác thực thành công. Đang mở bản đồ cho bạn...");
+        setMessage("Đã đăng nhập. Đang mở bản đồ...");
         window.setTimeout(() => navigate("/map", { replace: true }), 1000);
       })
       .catch((error) => {
@@ -44,9 +44,9 @@ export default function AuthCallback() {
   return (
     <AuthShell
       compact
-      eyebrow="Xác thực an toàn"
+      eyebrow="Tài khoản Google"
       title="Đăng nhập Google"
-      description="WebGIS Kon Tum đang kiểm tra thông tin đăng nhập của bạn."
+      description="Đang kiểm tra thông tin đăng nhập."
     >
       <AuthStatus status={status} message={message}>
         {status === "error" && (

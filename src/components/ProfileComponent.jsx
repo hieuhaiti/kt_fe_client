@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import useAuthStore from "@/stores/useAuthStore.jsx";
 import { updateProfile, changePassword } from "@/services/authService";
 import LoadingOverlay from "@/components/common/LoadingOverlay.jsx";
-import { formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -44,7 +44,7 @@ export default function Profile() {
     setIsLoading(true);
     try {
       await logout();
-      toast.success("Đăng xuất thành công!", {
+      toast.success("Đã đăng xuất.", {
         autoClose: 2000,
       });
       setTimeout(() => {
@@ -52,7 +52,7 @@ export default function Profile() {
       }, 500);
     } catch (error) {
       console.error("Logout error:", error);
-      toast.error("Lỗi khi đăng xuất", {
+      toast.error("Không thể đăng xuất. Hãy thử lại.", {
         autoClose: 2000,
       });
     } finally {
@@ -69,13 +69,13 @@ export default function Profile() {
         fullName: formData.full_name,
         phone: formData.phone,
       });
-      toast.success("Cập nhật thông tin thành công", {
+      toast.success("Đã cập nhật thông tin.", {
         autoClose: 2000,
       });
       setEditMode(false);
       await fetchProfile();
     } catch (error) {
-      toast.error(error?.message || "Cập nhật thất bại", {
+      toast.error(error?.message || "Không thể cập nhật thông tin. Hãy thử lại.", {
         autoClose: 2000,
       });
     } finally {
@@ -87,14 +87,17 @@ export default function Profile() {
     e.preventDefault();
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error("Mật khẩu mới không khớp", {
+      toast.error("Mật khẩu nhập lại không khớp.", {
         autoClose: 2000,
       });
       return;
     }
 
-    if (passwordForm.newPassword.length < 6) {
-      toast.error("Mật khẩu phải ít nhất 6 ký tự", {
+    if (
+      passwordForm.newPassword.length < 8 ||
+      passwordForm.newPassword.length > 128
+    ) {
+      toast.error("Mật khẩu phải có từ 8 đến 128 ký tự", {
         autoClose: 2000,
       });
       return;
@@ -107,7 +110,7 @@ export default function Profile() {
         oldPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword,
       });
-      toast.success("Đổi mật khẩu thành công", {
+      toast.success("Đã đổi mật khẩu.", {
         autoClose: 2000,
       });
       setPasswordForm({
@@ -116,7 +119,7 @@ export default function Profile() {
         confirmPassword: "",
       });
     } catch (error) {
-      toast.error(error?.message || "Đổi mật khẩu thất bại", {
+      toast.error(error?.message || "Không thể đổi mật khẩu. Hãy thử lại.", {
         autoClose: 2000,
       });
     } finally {
@@ -148,10 +151,10 @@ export default function Profile() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">
-            Hồ sơ người dùng
+            Hồ sơ cá nhân
           </h1>
           <p className="text-muted-foreground">
-            Quản lý thông tin tài khoản của bạn
+            Xem và cập nhật thông tin tài khoản.
           </p>
         </div>
 
@@ -334,8 +337,10 @@ export default function Profile() {
                           </p>
                         </div>
                         <p className="text-foreground font-medium ml-7">
-                          {new Date(user?.created_at).toLocaleDateString(
+                          {formatDate(
+                            user?.created_at,
                             "vi-VN",
+                            "Chưa có thông tin",
                           )}
                         </p>
                       </div>
@@ -348,7 +353,10 @@ export default function Profile() {
                           </p>
                         </div>
                         <p className="text-foreground font-medium ml-7">
-                          {formatDateTime(user?.last_login)}
+                          {formatDateTime(
+                            user?.last_login,
+                            "Chưa có thông tin",
+                          )}
                         </p>
                       </div>
                     </div>
@@ -422,8 +430,7 @@ export default function Profile() {
 
                     <div className="bg-info/10 border border-info/20 rounded-lg p-3">
                       <p className="text-sm text-info">
-                        💡 Mật khẩu phải ít nhất 6 ký tự và chứa chữ hoa, chữ
-                        thường, số.
+                        Mật khẩu mới phải có từ 8 đến 128 ký tự.
                       </p>
                     </div>
 

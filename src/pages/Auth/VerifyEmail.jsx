@@ -11,7 +11,7 @@ export default function VerifyEmail() {
   const [status, setStatus] = useState(token ? "loading" : "error");
   const [message, setMessage] = useState(
     token
-      ? "Đang xác minh địa chỉ email của bạn..."
+      ? "Đang xác minh email..."
       : "Liên kết xác minh không hợp lệ.",
   );
   const startedRef = useRef(false);
@@ -26,7 +26,7 @@ export default function VerifyEmail() {
         setStatus("success");
         setMessage(
           response?.message ||
-            "Email đã được xác minh. Bạn có thể đăng nhập ngay bây giờ.",
+            "Đã xác minh email. Bạn có thể đăng nhập.",
         );
       })
       .catch((error) => {
@@ -44,12 +44,12 @@ export default function VerifyEmail() {
       compact
       eyebrow="Xác minh tài khoản"
       title="Xác minh email"
-      description="Bước này giúp bảo vệ tài khoản và bảo đảm cảnh báo được gửi đúng người."
+      description="Xác minh email để hoàn tất đăng ký."
     >
       <AuthStatus status={status} message={message}>
         {status !== "loading" && (
           <Button asChild variant="outline" className="mt-6 w-full rounded-xl">
-            <Link to="/login">Tới trang đăng nhập</Link>
+            <Link to="/login">Đăng nhập</Link>
           </Button>
         )}
       </AuthStatus>

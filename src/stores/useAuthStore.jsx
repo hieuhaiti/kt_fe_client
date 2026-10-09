@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { getProfile, logout as apiLogout } from "@/services/authService";
+import { getProfile, logout as apiLogout, normalizeUser } from "@/services/authService";
 import { tokenManager } from "@/lib/tokenManager";
 
 const useAuthStore = create(
@@ -11,7 +11,10 @@ const useAuthStore = create(
       loading: false,
       error: null,
 
-      setUser: (user) => set({ user, isAuthenticated: !!user, error: null }),
+      setUser: (user) => {
+        const normalized = normalizeUser(user);
+        set({ user: normalized, isAuthenticated: !!normalized, error: null });
+      },
       clearUser: () => set({ user: null, isAuthenticated: false, error: null }),
       expireSession: () => {
         tokenManager.clearTokens();
@@ -28,7 +31,7 @@ const useAuthStore = create(
           return user;
         } catch (err) {
           set({
-            error: err?.message || "Failed to fetch profile",
+            error: err?.message || "Không thể tải thông tin tài khoản.",
             loading: false,
             user: null,
             isAuthenticated: false,

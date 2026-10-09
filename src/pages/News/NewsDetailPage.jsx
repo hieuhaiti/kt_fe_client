@@ -164,7 +164,7 @@ export default function NewsDetailPage() {
             <div className="max-w-lg rounded-lg border border-border bg-card p-8 text-center shadow-sm">
               <AlertCircle className="mx-auto mb-3 h-10 w-10 text-destructive" />
               <h1 className="text-2xl font-semibold text-foreground">
-                Không tìm thấy tin tức
+                Không tìm thấy bài viết
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
                 Bài viết có thể đã được gỡ hoặc đường dẫn không còn hợp lệ.
@@ -231,7 +231,7 @@ export default function NewsDetailPage() {
             <div className="mt-6 flex flex-wrap gap-3 border-t border-border pt-5 text-sm text-muted-foreground">
               <span className="inline-flex items-center gap-2">
                 <User className="h-4 w-4" />
-                {news.authorName || "Ban biên tập"}
+                {news.authorName || "Chưa có thông tin tác giả"}
               </span>
               <span className="inline-flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
@@ -277,7 +277,7 @@ export default function NewsDetailPage() {
               />
             ) : (
               <div className="whitespace-pre-line text-base leading-8 text-foreground">
-                {news.content || "Nội dung bài viết đang được cập nhật."}
+                {news.content || "Bài viết chưa có nội dung."}
               </div>
             )}
 
@@ -317,7 +317,7 @@ export default function NewsDetailPage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {commentsTotal > 0
                       ? `${commentsTotal.toLocaleString("vi-VN")} bình luận đã được duyệt`
-                      : "Các bình luận đã duyệt sẽ hiển thị tại đây."}
+                      : "Chỉ hiển thị bình luận đã duyệt."}
                   </p>
                 </div>
               </div>
@@ -358,7 +358,7 @@ export default function NewsDetailPage() {
                     </Button>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Bình luận sẽ được hiển thị sau khi được kiểm duyệt.
+                    Bình luận sẽ hiển thị sau khi được duyệt.
                   </p>
                 </form>
               ) : (

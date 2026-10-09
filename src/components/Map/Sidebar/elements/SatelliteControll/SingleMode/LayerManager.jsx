@@ -34,7 +34,7 @@ function LayerManager() {
         <div className="flex items-center gap-2">
           <Layers size={16} className="text-primary" />
           <span className="text-sm font-semibold text-foreground">
-            Quản lý Layer
+            Các lớp ảnh đang xem
           </span>
           <span className="text-xs bg-accent/20 text-accent px-2 py-0.5 rounded-full">
             {satelliteLayers.length}

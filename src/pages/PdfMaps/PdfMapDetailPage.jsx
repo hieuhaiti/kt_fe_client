@@ -150,7 +150,7 @@ export default function PdfMapDetailPage() {
             {pdfMap.fallbackUsed && (
               <Badge variant="soft-warning">
                 <Languages />
-                Đang hiển thị bản dịch dự phòng
+                Đang hiển thị ngôn ngữ khác
               </Badge>
             )}
           </div>
@@ -223,7 +223,7 @@ export default function PdfMapDetailPage() {
               <div className="flex items-start gap-3">
                 <Languages className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div>
-                  <p className="text-muted-foreground">Ngôn ngữ dữ liệu</p>
+                  <p className="text-muted-foreground">Ngôn ngữ bản đồ</p>
                   <p className="font-medium text-card-foreground">
                     {(pdfMap.lang || "vi").toUpperCase()}
                   </p>
@@ -281,7 +281,7 @@ export default function PdfMapDetailPage() {
                 <div className="flex min-h-80 flex-col items-center justify-center rounded-lg bg-muted p-6 text-center">
                   <FileText className="mb-3 h-12 w-12 text-muted-foreground" />
                   <p className="mb-4 text-muted-foreground">
-                    Không hỗ trợ xem trước định dạng tệp này.
+                    Không thể xem trước tệp này. Hãy chọn “Mở tệp”.
                   </p>
                   <Button onClick={handleOpenFile}>
                     <Download />

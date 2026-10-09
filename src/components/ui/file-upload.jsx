@@ -26,6 +26,8 @@ const ITEM_PROGRESS_NAME = "FileUploadItemProgress";
 const ITEM_DELETE_NAME = "FileUploadItemDelete";
 const CLEAR_NAME = "FileUploadClear";
 
+import { normalizeUploadError } from "@/lib/upload-utils";
+
 function formatBytes(bytes) {
   if (bytes === 0) return "0 B";
   const sizes = ["B", "KB", "MB", "GB", "TB"];
@@ -386,7 +388,7 @@ function FileUpload(props) {
             store.dispatch({
               type: "SET_ERROR",
               file,
-              error: error.message ?? "Upload failed",
+              error: normalizeUploadError(error),
             });
           },
         });
@@ -397,7 +399,7 @@ function FileUpload(props) {
       }
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : "Upload failed";
+        normalizeUploadError(error);
       for (const file of files) {
         store.dispatch({
           type: "SET_ERROR",
@@ -425,7 +427,7 @@ function FileUpload(props) {
         filesToProcess = filesToProcess.slice(0, remainingSlotCount);
 
         for (const file of rejectedFiles) {
-          let rejectionMessage = `Maximum ${maxFiles} files allowed`;
+          let rejectionMessage = `Số lượng tệp tối đa được phép là ${maxFiles}.`;
 
           if (propsRef.current.onFileValidate) {
             const validationMessage = propsRef.current.onFileValidate(file);
@@ -468,7 +470,7 @@ function FileUpload(props) {
             (type.includes("/*") &&
               fileType.startsWith(type.replace("/*", "/"))))
         ) {
-          rejectionMessage = "File type not accepted";
+          rejectionMessage = "Định dạng tệp không được hỗ trợ. Hãy chọn tệp khác.";
           propsRef.current.onFileReject?.(file, rejectionMessage);
           rejected = true;
           invalid = true;
@@ -476,7 +478,7 @@ function FileUpload(props) {
       }
 
       if (maxSize && file.size > maxSize) {
-        rejectionMessage = "File too large";
+        rejectionMessage = "Tệp quá lớn. Hãy chọn tệp nhỏ hơn.";
         propsRef.current.onFileReject?.(file, rejectionMessage);
         rejected = true;
         invalid = true;
@@ -573,7 +575,7 @@ function FileUpload(props) {
             required={required}
             onChange={onInputChange} />
           <div id={labelId} className="sr-only">
-            {label ?? "File upload"}
+            {label ?? "Tải tệp lên"}
           </div>
         </RootPrimitive>
       </FileUploadContext.Provider>
@@ -855,12 +857,12 @@ function FileUploadItem(props) {
   if (!fileState) return null;
 
   const statusText = fileState.error
-    ? `Error: ${fileState.error}`
+    ? `Lỗi: ${fileState.error}`
     : fileState.status === "uploading"
-      ? `Uploading: ${fileState.progress}% complete`
+      ? `Đang tải lên: ${fileState.progress}%`
       : fileState.status === "success"
-        ? "Upload complete"
-        : "Ready to upload";
+        ? "Đã tải lên"
+        : "Sẵn sàng tải lên";
 
   const ItemPrimitive = asChild ? Slot : "div";
 

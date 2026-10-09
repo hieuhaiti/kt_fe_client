@@ -52,7 +52,7 @@ export function GEEAnalysis() {
                 </span>
               </p>
               <p className="text-xs text-foreground/70 ml-6">
-                Layer:{" "}
+                Lớp:{" "}
                 <span className="font-semibold text-foreground">
                   {satelliteLayers.length} lớp
                 </span>

@@ -84,7 +84,7 @@ const detectRasterExtension = async (blob) => {
 
   if (isZip) return "zip";
   if (isLittleEndianTiff || isBigEndianTiff) return "tif";
-  throw new Error("Server không trả về tệp GeoTIFF hoặc ZIP hợp lệ.");
+  throw new Error("Tệp tải về không đúng định dạng GeoTIFF hoặc ZIP.");
 };
 /**
  * Shared satellite layer control card.
@@ -116,11 +116,11 @@ function StatsRows({ layerType, stats }) {
   }
   if (layerType === "heatmap") {
     if (stats.lstMeanC != null)
-      rows.push({ label: "LST trung bình", value: `${stats.lstMeanC.toFixed(2)} °C` });
+      rows.push({ label: "Nhiệt độ bề mặt trung bình", value: `${stats.lstMeanC.toFixed(2)} °C` });
     if (stats.lstMinC != null)
-      rows.push({ label: "LST min", value: `${stats.lstMinC.toFixed(2)} °C` });
+      rows.push({ label: "Nhiệt độ bề mặt thấp nhất", value: `${stats.lstMinC.toFixed(2)} °C` });
     if (stats.lstMaxC != null)
-      rows.push({ label: "LST max", value: `${stats.lstMaxC.toFixed(2)} °C` });
+      rows.push({ label: "Nhiệt độ bề mặt cao nhất", value: `${stats.lstMaxC.toFixed(2)} °C` });
   }
   if (rows.length === 0) return null;
 
@@ -177,7 +177,7 @@ function LayerControl({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-medium text-foreground truncate">
-                    {config?.label || `Layer ${index + 1}`}
+                    {config?.label || `Lớp ${index + 1}`}
                   </p>
                   {layer.cloudCover != null && (
                     <span className="inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-500 shrink-0">
@@ -241,7 +241,7 @@ function LayerControl({
               </TooltipTrigger>
               <TooltipContent className="text-xs">
                 {hasRasterDownload
-                  ? "Tải xuống ảnh raster"
+                  ? "Tải ảnh GeoTIFF"
                   : "Không có liên kết tải về"}
               </TooltipContent>
             </Tooltip>
@@ -269,7 +269,7 @@ function LayerControl({
               </TooltipTrigger>
               <TooltipContent className="text-xs">
                 {hasVectorDownload
-                  ? "Tải xuống file GEOJSON (Vector)"
+                  ? "Tải dữ liệu GeoJSON"
                   : "Không có liên kết tải về"}
               </TooltipContent>
             </Tooltip>
@@ -289,13 +289,13 @@ function LayerControl({
                       size={18}
                       className="text-warning shrink-0"
                     />
-                    Xác nhận tải xuống{" "}
+                    Tải xuống{" "}
                     {downloadType === "vector" ? "vector" : "raster"}
                   </DialogTitle>
                   <DialogDescription className="text-sm text-foreground/70">
                     {downloadType === "vector"
-                      ? "Lưu ý: File vector sẽ được cắt theo vùng nghiên cứu — buffer 20km quanh biên giới."
-                      : "Ảnh raster tải về bao phủ toàn tỉnh Kon Tum và sử dụng độ phân giải được cấu hình trên server. GeoTIFF là định dạng GIS chuyên dụng; hãy mở bằng QGIS hoặc ArcGIS thay vì trình duyệt."}
+                      ? "Dữ liệu được cắt theo vùng đệm 20 km quanh biên giới."
+                      : "Ảnh bao phủ tỉnh Kon Tum, với độ phân giải theo thiết lập hệ thống. Mở tệp GeoTIFF bằng QGIS hoặc ArcGIS, không mở trong trình duyệt."}
                   </DialogDescription>
                 </DialogHeader>
                 {downloadError && (
@@ -323,12 +323,12 @@ function LayerControl({
                         setIsDownloading(true);
                         setDownloadError("");
                         if (downloadType === "vector") {
-                          throw new Error("Vector download is unavailable");
+                          throw new Error("Chưa thể tải dữ liệu GeoJSON.");
                         }
 
                         const res = await fetch(rasterUrl);
                         if (!res.ok) {
-                          throw new Error(`Server trả lỗi HTTP ${res.status}.`);
+                          throw new Error(`Không thể tải ảnh. Mã lỗi: ${res.status}.`);
                         }
                         const blob = await res.blob();
                         if (!blob.size) {
@@ -351,7 +351,7 @@ function LayerControl({
                         downloaded = true;
                       } catch (err) {
                         setDownloadError(
-                          err?.message || "Không thể tải ảnh raster. Vui lòng thử lại.",
+                          err?.message || "Không thể tải ảnh. Hãy thử lại.",
                         );
                       } finally {
                         setIsDownloading(false);
@@ -390,7 +390,7 @@ function LayerControl({
         {/* Opacity */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-foreground/60">Độ trong suốt</label>
+            <label className="text-xs text-foreground/60">Mức hiển thị</label>
             <span
               className={`text-xs font-medium px-1.5 py-0.5 rounded ${accentClass}`}
             >

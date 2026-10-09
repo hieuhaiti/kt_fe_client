@@ -42,7 +42,7 @@ export default function ResetPassword() {
       compact
       eyebrow="Bảo mật tài khoản"
       title="Tạo mật khẩu mới"
-      description="Mật khẩu mới nên dễ nhớ với bạn nhưng khó đoán với người khác."
+      description="Chọn mật khẩu có ít nhất 8 ký tự, khó đoán."
     >
       {!token ? (
         <AuthStatus
@@ -56,7 +56,7 @@ export default function ResetPassword() {
       ) : completed ? (
         <AuthStatus
           status="success"
-          message="Mật khẩu đã được cập nhật. Đang chuyển bạn tới trang đăng nhập..."
+          message="Đã đổi mật khẩu. Đang mở trang đăng nhập..."
         />
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
@@ -88,7 +88,7 @@ export default function ResetPassword() {
               {...register("confirmPassword", {
                 validate: (value) =>
                   value === getValues("password") ||
-                  "Mật khẩu xác nhận không khớp.",
+                  "Mật khẩu nhập lại không khớp.",
               })}
             />
             {errors.confirmPassword && (
@@ -101,7 +101,7 @@ export default function ResetPassword() {
           <div className="rounded-xl border border-border/70 bg-muted/60 p-3.5">
             <p className="mb-2 flex items-center gap-2 text-xs font-semibold text-foreground">
               <KeyRound className="size-3.5 text-primary" />
-              Gợi ý mật khẩu an toàn
+              Lưu ý về mật khẩu
             </p>
             <div className="grid gap-1.5 text-xs text-muted-foreground">
               {["Ít nhất 8 ký tự", "Không dùng lại mật khẩu cũ"].map((item) => (

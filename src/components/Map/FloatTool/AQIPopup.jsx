@@ -196,9 +196,9 @@ function createPopupContent(clickedPoint, aqiData, isLoading, isError) {
       <div style="padding: 16px 36px 12px 16px; border-bottom: 1px solid #f3f4f6;">
         <div style="font-weight: 700; font-size: 15px; margin-bottom: 4px;">Chất lượng không khí</div>
         <div style="font-size: 11px; color: #9ca3af; display: flex; gap: 6px; flex-wrap: wrap;">
-           <span style="white-space: nowrap;">Lat: ${lat.toFixed(4)}</span>
+           <span style="white-space: nowrap;">Vĩ độ: ${lat.toFixed(4)}</span>
            <span style="color: #d1d5db;">|</span>
-           <span style="white-space: nowrap;">Lng: ${lng.toFixed(4)}</span>
+           <span style="white-space: nowrap;">Kinh độ: ${lng.toFixed(4)}</span>
         </div>
       </div>
 

@@ -10,7 +10,7 @@ export const signupFormSchema = z
       .max(50, "Tên đăng nhập không được quá 50 ký tự")
       .regex(
         /^[a-zA-Z0-9]+$/,
-        "Tên đăng nhập chỉ được chứa chữ cái và số (không có ký tự đặc biệt)",
+        "Tên đăng nhập chỉ gồm chữ cái và số",
       ),
     email: z
       .string()
@@ -30,6 +30,6 @@ export const signupFormSchema = z
     confirmPassword: z.string().min(1, "Vui lòng xác nhận mật khẩu"),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Mật khẩu xác nhận không khớp",
+    message: "Mật khẩu nhập lại không khớp",
     path: ["confirmPassword"],
   });

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 export default function Policy() {
   useEffect(() => {
-    window.scrollTo(0);
+    window.scrollTo(0, 0);
   }, []);
 
   return (
@@ -11,7 +11,7 @@ export default function Policy() {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-6 py-12">
           <h1 className="text-4xl font-bold text-gray-900">
-            Chính Sách Quyền Riêng Tư
+            Chính sách quyền riêng tư
           </h1>
           <p className="text-lg text-gray-600 mt-2">Cổng WebGIS tỉnh Kon Tum</p>
         </div>
@@ -30,8 +30,7 @@ export default function Policy() {
                 Chào mừng bạn đến với <strong>Cổng WebGIS tỉnh Kon Tum</strong>.
               </p>
               <p>
-                Chúng tôi tôn trọng quyền riêng tư của người dùng và cam kết bảo
-                vệ thông tin cá nhân của bạn.
+                Chúng tôi tôn trọng quyền riêng tư và cam kết bảo vệ thông tin cá nhân của bạn.
               </p>
               <p>
                 Chính sách này giải thích cách chúng tôi thu thập, sử dụng và
@@ -53,8 +52,7 @@ export default function Policy() {
                   2.1 Thông tin cá nhân
                 </h3>
                 <p className="text-gray-700 mb-3">
-                  Chúng tôi có thể thu thập các thông tin sau khi người dùng
-                  đăng nhập hoặc cung cấp tự nguyện:
+                  Khi bạn đăng nhập hoặc tự cung cấp, chúng tôi có thể thu thập:
                 </p>
                 <ul className="list-disc list-inside space-y-2 text-gray-700 ml-2">
                   <li>Tên</li>
@@ -85,8 +83,7 @@ export default function Policy() {
               <p>Chúng tôi có thể sử dụng thông tin người dùng cung cấp để:</p>
               <ul className="list-disc list-inside space-y-2 ml-2">
                 <li>
-                  Liên hệ trong trường hợp cần xác minh các vấn đề, phản ánh
-                  hoặc nội dung do người dùng đăng tải
+                  Liên hệ để xác minh sự việc, phản ánh hoặc nội dung bạn đăng
                 </li>
                 <li>Hỗ trợ xử lý sự việc</li>
                 <li>Đảm bảo tính chính xác của thông tin</li>
@@ -177,7 +174,7 @@ export default function Policy() {
             </h2>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
               <p className="text-gray-700 mb-3">
-                Nếu bạn có câu hỏi, vui lòng liên hệ:
+                Nếu có câu hỏi, bạn có thể liên hệ:
               </p>
               <div className="flex items-center text-gray-800">
                 <span className="text-2xl mr-3">📧</span>

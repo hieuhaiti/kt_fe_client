@@ -168,8 +168,7 @@ function EmptyState({ onCreate }) {
       <MessageSquare className="mb-3 h-12 w-12 text-muted-foreground" />
       <p className="font-medium text-foreground">Chưa có phản ánh phù hợp.</p>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">
-        Thử thay đổi bộ lọc hoặc gửi phản ánh mới khi phát hiện vấn đề hiện
-        trường.
+        Thử đổi bộ lọc hoặc gửi phản ánh mới.
       </p>
       <Button className="mt-4" onClick={onCreate}>
         <Plus />
@@ -254,13 +253,11 @@ export default function MyFeedbackPage() {
               Phản ánh của tôi
             </h1>
             <p className="mt-2 text-sm text-muted-foreground md:text-base">
-              Theo dõi phản ánh hiện trường đã gửi, trạng thái xử lý và vị trí
-              liên quan.
+              Xem phản ánh đã gửi và kết quả xử lý.
             </p>
             {!isAuthenticated && (
               <div className="mt-4 rounded-lg border border-border bg-(--info-subtle) p-3 text-sm text-(--info-subtle-foreground)">
-                Bạn đang xem phản ánh gắn với trình duyệt hiện tại. Đăng nhập để
-                đồng bộ phản ánh theo tài khoản.
+                Đang xem phản ánh gửi từ trình duyệt này. Đăng nhập để theo dõi theo tài khoản.
               </div>
             )}
           </div>
@@ -499,7 +496,7 @@ export default function MyFeedbackPage() {
             <DialogDescription>
               {isFetchingDetail
                 ? "Đang tải chi tiết..."
-                : "Thông tin phản ánh và trạng thái xử lý hiện tại."}
+                : "Nội dung và trạng thái xử lý."}
             </DialogDescription>
           </DialogHeader>
 

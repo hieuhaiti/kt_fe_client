@@ -4,15 +4,15 @@ import { AlertTriangle, Clock, Zap, RefreshCw } from "lucide-react";
 const NOTES = [
   {
     icon: Clock,
-    text: "Tải có thể mất thời gian tuỳ mạng và vùng dữ liệu.",
+    text: "Thời gian tải phụ thuộc kết nối và phạm vi dữ liệu.",
   },
   {
     icon: Zap,
-    text: "Sau khi tải xong bản đồ có thể lag nhẹ trong giây lát.",
+    text: "Ảnh vệ tinh có thể hiển thị chậm.",
   },
   {
     icon: RefreshCw,
-    text: "Nếu chưa thấy ảnh, kéo/lắc bản đồ hoặc bật/tắt lớp ảnh để render lại.",
+    text: "Ảnh chưa hiển thị. Hãy thử tải lại lớp ảnh.",
   },
 ];
 

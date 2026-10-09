@@ -54,7 +54,7 @@ export default function App() {
       onSessionExpired(() => {
         expireSession();
         queryClient.clear();
-        toast.error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.", {
+        toast.error("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.", {
           toastId: "session-expired",
         });
 
@@ -101,6 +101,22 @@ export default function App() {
         </Routes>
       </Suspense>
       <ToastContainer
+        aria-label="Thông báo (Alt+T)"
+        closeButton={({ closeToast, theme }) => (
+          <button
+            type="button"
+            className={`Toastify__close-button Toastify__close-button--${theme}`}
+            aria-label="Đóng thông báo"
+            onClick={(event) => {
+              event.stopPropagation();
+              closeToast(true);
+            }}
+          >
+            <svg aria-hidden="true" viewBox="0 0 14 16">
+              <path fillRule="evenodd" d="M7.71 8.23l3.75 3.75-1.48 1.48-3.75-3.75-3.75 3.75L1 11.98l3.75-3.75L1 4.48 2.48 3l3.75 3.75L9.98 3l1.48 1.48-3.75 3.75z" />
+            </svg>
+          </button>
+        )}
         position="top-right"
         className="z-999"
         autoClose={3500}

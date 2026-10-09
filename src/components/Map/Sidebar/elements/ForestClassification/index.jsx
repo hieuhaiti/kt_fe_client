@@ -295,28 +295,28 @@ function ComparisonPeriodNotice({ current, reference }) {
     getPeriodOrdinal(reference) > getPeriodOrdinal(current);
   const currentWindow = getForestAnalysisWindow(current);
   const referenceWindow = getForestAnalysisWindow(reference);
-  let title = "Hai kỳ sử dụng các khoảng ảnh khác nhau";
-  let summary = "Nên ưu tiên cùng tháng giữa các năm";
+  let title = "Hai kỳ dùng khoảng ảnh khác nhau";
+  let summary = "Nên so sánh cùng tháng giữa các năm";
   let description =
-    "Nên ưu tiên cùng tháng giữa các năm để hạn chế chênh lệch do mùa.";
+    "Chọn cùng tháng giữa các năm để giảm khác biệt theo mùa.";
   let tone = "border-warning/30 bg-warning/10 text-warning-foreground";
 
   if (referenceIsNewer) {
-    title = "Kỳ đối chiếu đang mới hơn kỳ cần xem";
-    summary = "Nên đổi lại thứ tự hai kỳ";
+    title = "Kỳ đối chiếu mới hơn kỳ đang xem";
+    summary = "Nên đổi thứ tự hai kỳ";
     description =
-      "Nên chọn một kỳ cũ hơn để chênh lệch được trình bày đúng chiều thời gian.";
+      "Chọn kỳ đối chiếu cũ hơn để xem thay đổi theo thời gian.";
   } else if (sameMonth && distance >= 12) {
-    title = "So sánh cùng mùa — phù hợp hơn";
+    title = "Hai kỳ cùng mùa";
     summary = `${formatPeriodLabel(reference)} → ${formatPeriodLabel(current)}`;
     description =
-      "Hai kỳ cùng tháng giúp hạn chế khác biệt tự nhiên giữa mùa mưa, mùa khô và giai đoạn cây thay lá.";
+      "Cùng tháng giúp giảm khác biệt do mùa mưa, mùa khô và cây thay lá.";
     tone = "border-success/30 bg-success/10 text-success-foreground";
   } else if (overlapMonths > 0) {
-    title = "Hai kỳ dùng chung";
+    title = "Hai kỳ dùng chung nguồn ảnh";
     summary = `${overlapMonths}/12 tháng dữ liệu`;
     description =
-      "Chênh lệch phù hợp để theo dõi xu hướng, không đại diện cho biến động chỉ xảy ra trong riêng hai tháng.";
+      "Hai kỳ dùng chung ảnh nên chênh lệch chỉ cho thấy xu hướng, không phải thay đổi riêng trong hai tháng.";
   }
 
   return (
@@ -395,7 +395,7 @@ function ComparisonCard({ comparison, currentSnapshot }) {
         {topChanges.length > 0 && (
           <div>
             <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
-              Lớp biến động nhiều nhất
+              Nhóm có diện tích thay đổi lớn nhất
             </p>
             <div className="divide-y divide-border">
               {topChanges.map((item) => (
@@ -941,7 +941,7 @@ export function ForestClassification() {
         if (pollRef.current.snapshotId !== pollKey) return;
         if (Date.now() - pollRef.current.startedAt >= DISTRICT_POLL_MAX_MS) {
           setDistrictLayerError(
-            "Đã dừng kiểm tra sau 15 phút. Vui lòng tải lại để cập nhật trạng thái công bố.",
+            "Đã dừng kiểm tra sau 15 phút. Tải lại để xem trạng thái công bố.",
           );
           stopPoll();
           return;
@@ -1485,31 +1485,23 @@ export function ForestClassification() {
         {infoExpanded && (
           <ul className="text-foreground list-disc space-y-1 border-t border-info/20 px-3 pt-2 pb-3 pl-7">
             <li>
-              <b>Ý nghĩa kỳ dữ liệu</b>: tháng được chọn là thời điểm kết quả
-              được cập nhật đến, không phải bản đồ chỉ dùng ảnh của riêng tháng
-              đó.
+              <b>Kỳ dữ liệu</b>: kết quả cập nhật đến tháng đã chọn, không chỉ dùng ảnh của tháng đó.
             </li>
             {snapshot && analysisWindow && (
               <li>
-                <b>Khoảng ảnh sử dụng</b>: {analysisWindow.label}. Khoảng 12
-                tháng giúp quan sát đủ mùa xanh, mùa khô và giai đoạn cây thay
-                lá, đồng thời bổ sung những nơi bị mây che.
+                <b>Khoảng ảnh sử dụng</b>: {analysisWindow.label}. Ảnh trong 12 tháng bao quát các mùa và bổ sung khu vực bị mây che.
               </li>
             )}
             <li>
-              <b>Thông tin gần nhất</b>: ba tháng cuối kỳ được dùng để phản ánh
-              tình trạng mới hơn.
+              <b>Thông tin gần nhất</b>: ảnh của ba tháng cuối kỳ giúp phản ánh hiện trạng gần nhất.
             </li>
             <li>
-              <b>Độ chi tiết</b>: mỗi điểm trên bản đồ đại diện cho khu vực
-              khoảng {districtReadiness?.scaleM ?? 150} ×{" "}
+              <b>Độ chi tiết</b>: mỗi điểm ảnh tương ứng khu vực khoảng {districtReadiness?.scaleM ?? 150} ×{" "}
               {districtReadiness?.scaleM ?? 150} m. Ranh giới và diện tích có
               thể có sai số.
             </li>
             <li>
-              <b>Khi so sánh</b>: nên ưu tiên cùng tháng giữa các năm. Hai tháng
-              liền nhau dùng chung phần lớn ảnh nên chỉ phù hợp theo dõi xu
-              hướng.
+              <b>Khi so sánh</b>: chọn cùng tháng giữa các năm. Hai tháng liền nhau dùng chung phần lớn ảnh, chỉ phù hợp xem xu hướng.
             </li>
           </ul>
         )}
@@ -1550,8 +1542,7 @@ export function ForestClassification() {
               Kỳ đối chiếu số liệu
             </label>
             <p className="text-[10px] leading-4 text-muted-foreground">
-              Bản đồ vẫn hiển thị kỳ đang xem. Chọn một kỳ cũ hơn để đối chiếu
-              diện tích.
+              Chọn kỳ cũ hơn để so sánh diện tích. Bản đồ vẫn giữ kỳ đang xem.
             </p>
           </div>
           <Select

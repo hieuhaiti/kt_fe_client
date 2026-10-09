@@ -25,12 +25,10 @@ function UnSupported() {
             Thiết bị không được hỗ trợ
           </h2>
           <p className="max-w-md mx-auto mb-6 text-foreground/70">
-            Vui lòng sử dụng thiết bị có màn hình lớn hơn (từ 1024px trở lên) để
-            trải nghiệm tốt nhất ứng dụng.
+            Hãy dùng màn hình rộng từ 1024 px để mở ứng dụng.
           </p>
           <p className="max-w-md mx-auto mb-6 text-sm text-foreground/70">
-            Thiết bị hiện tại chưa được hỗ trợ đầy đủ, nhưng bạn vẫn có thể tải
-            ứng dụng APK để sử dụng trên điện thoại Android.
+            Nếu dùng điện thoại Android, bạn có thể tải ứng dụng.
           </p>
           <Button onClick={handleDownloadApp} className="gap-2">
             <Smartphone className="w-4 h-4" />

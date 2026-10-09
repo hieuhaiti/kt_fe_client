@@ -561,7 +561,7 @@ export const useSatelliteStore = create(
           return response;
         } catch (error) {
           const message =
-            error?.message || "Khong the tai anh ve tinh. Vui long thu lai.";
+            error?.message || "Không thể tải ảnh vệ tinh. Vui lòng thử lại.";
           console.error("❌ [searchImages] Error:", error);
           set({ error: message });
           throw error;

@@ -18,13 +18,13 @@ export default function Logout() {
   return (
     <AuthShell
       compact
-      eyebrow="Bảo vệ phiên làm việc"
+      eyebrow="Tài khoản"
       title="Đang đăng xuất"
-      description="Hệ thống đang đóng phiên và xóa thông tin xác thực trên thiết bị này."
+      description="Đang kết thúc phiên đăng nhập trên thiết bị này."
     >
       <AuthStatus
         status="loading"
-        message="Vui lòng chờ trong giây lát. Bạn sẽ được chuyển về trang đăng nhập."
+        message="Bạn sẽ trở về trang đăng nhập sau giây lát."
       />
     </AuthShell>
   );

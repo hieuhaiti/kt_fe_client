@@ -224,6 +224,12 @@ export default function MapComponent() {
 
     mapRef.current.single = new mapboxgl.Map({
       container: singleMapContainerRef.current,
+      locale: {
+        "Map.Title": "Bản đồ",
+        "FullscreenControl.Enter": "Xem toàn màn hình",
+        "FullscreenControl.Exit": "Thoát toàn màn hình",
+        "AttributionControl.ToggleAttribution": "Hiện hoặc ẩn nguồn bản đồ",
+      },
       style: mapStyle || defaultStyle,
       center: [defaultLatLong.lng, defaultLatLong.lat],
       zoom: defaultZoom,
@@ -235,6 +241,12 @@ export default function MapComponent() {
 
     mapRef.current.split = new mapboxgl.Map({
       container: splitMapContainerRef.current,
+      locale: {
+        "Map.Title": "Bản đồ",
+        "FullscreenControl.Enter": "Xem toàn màn hình",
+        "FullscreenControl.Exit": "Thoát toàn màn hình",
+        "AttributionControl.ToggleAttribution": "Hiện hoặc ẩn nguồn bản đồ",
+      },
       style: mapStyle || defaultStyle,
       center: [defaultLatLong.lng, defaultLatLong.lat],
       zoom: defaultZoom,
@@ -1275,7 +1287,7 @@ class ResetControl {
     // Create button
     this._btn = document.createElement("button");
     this._btn.className = "mapboxgl-ctrl-icon";
-    this._btn.title = "Reset về vị trí mặc định";
+    this._btn.title = "Về bản đồ Kon Tum";
     Object.assign(this._btn.style, {
       width: "29px",
       height: "29px",

@@ -92,8 +92,25 @@ export async function exchangeOAuthCode(code, lang = "vi") {
   return response;
 }
 
-export function getProfile(lang = "vi") {
-  return fetcher(withQuery(`${AUTH_PATH}/me`, languageQuery(lang)));
+export function normalizeUser(rawUser) {
+  if (!rawUser || typeof rawUser !== "object") return null;
+  const createdAt = rawUser.created_at ?? rawUser.createdAt ?? rawUser.createdDate ?? null;
+  const lastLogin = rawUser.last_login_at ?? rawUser.last_login ?? rawUser.lastLogin ?? rawUser.lastLoginAt ?? null;
+  return {
+    ...rawUser,
+    created_at: createdAt,
+    last_login: lastLogin,
+  };
+}
+
+export async function getProfile(lang = "vi") {
+  const res = await fetcher(withQuery(`${AUTH_PATH}/me`, languageQuery(lang)));
+  if (res && res.data && res.data.user) {
+    res.data.user = normalizeUser(res.data.user);
+  } else if (res && res.user) {
+    res.user = normalizeUser(res.user);
+  }
+  return res;
 }
 
 export function updateProfile(payload, lang = "vi") {

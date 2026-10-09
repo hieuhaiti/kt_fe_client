@@ -426,7 +426,7 @@ function GeometrySummary({ geometry, kind }) {
           icon={Ruler}
           label="Chiều dài"
           value={formatLength(line.lengthKm)}
-          detail="Ước tính theo hình học"
+          detail="Ước tính từ đường trên bản đồ"
         />
         <SummaryMetric
           icon={Route}
@@ -481,7 +481,7 @@ function PropertyList({ entries }) {
           Chưa có thông tin chi tiết
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Lớp dữ liệu chưa cung cấp thêm thuộc tính cho đối tượng này.
+          Chưa có thông tin khác về đối tượng này.
         </p>
       </div>
     );
@@ -684,7 +684,7 @@ export function MapLayerDetailModal() {
                   className="flex items-center gap-2 text-sm font-semibold text-foreground"
                 >
                   <TableProperties className="h-4 w-4 text-primary" />
-                  Thông tin thuộc tính
+                  Thông tin đối tượng
                 </h3>
                 <span className="text-xs text-muted-foreground">
                   {propertyEntries.length} trường
@@ -696,9 +696,6 @@ export function MapLayerDetailModal() {
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/30 px-5 py-3 sm:px-6">
-          <p className="hidden text-xs text-muted-foreground sm:block">
-            Dữ liệu được cung cấp từ lớp bản đồ đang chọn.
-          </p>
           <Button
             type="button"
             variant="outline"

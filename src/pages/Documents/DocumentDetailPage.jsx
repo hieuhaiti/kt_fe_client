@@ -143,7 +143,7 @@ export default function DocumentDetailPage() {
             {documentData.fallbackUsed && (
               <Badge variant="soft-warning">
                 <Languages />
-                Đang hiển thị bản dịch dự phòng
+                Đang hiển thị ngôn ngữ khác
               </Badge>
             )}
           </div>
@@ -207,7 +207,7 @@ export default function DocumentDetailPage() {
               <div className="flex items-start gap-3">
                 <Languages className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <div>
-                  <p className="text-muted-foreground">Ngôn ngữ dữ liệu</p>
+                  <p className="text-muted-foreground">Ngôn ngữ tài liệu</p>
                   <p className="font-medium text-card-foreground">
                     {(documentData.lang || "vi").toUpperCase()}
                   </p>
@@ -255,7 +255,7 @@ export default function DocumentDetailPage() {
                       </p>
                       <Button onClick={handleDownload}>
                         <Download />
-                        Mở file PDF
+                        Mở tệp PDF
                       </Button>
                     </div>
                   </object>

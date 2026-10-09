@@ -118,8 +118,7 @@ export default function PdfMapsPage() {
                 Bản đồ PDF
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">
-                Tra cứu các sản phẩm bản đồ PDF công khai theo chủ đề, năm, tỷ
-                lệ và khu vực của tỉnh Kon Tum.
+                Tra cứu bản đồ PDF Kon Tum theo chủ đề và năm.
               </p>
             </div>
           </div>
@@ -238,10 +237,10 @@ export default function PdfMapsPage() {
                 <SelectValue placeholder="Hiển thị" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="6">6 mục</SelectItem>
-                <SelectItem value="12">12 mục</SelectItem>
-                <SelectItem value="24">24 mục</SelectItem>
-                <SelectItem value="50">50 mục</SelectItem>
+                <SelectItem value="6">6 / trang</SelectItem>
+                <SelectItem value="12">12 / trang</SelectItem>
+                <SelectItem value="24">24 / trang</SelectItem>
+                <SelectItem value="50">50 / trang</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -320,7 +319,7 @@ export default function PdfMapsPage() {
                             <div className="rounded-lg border border-border bg-card/90 p-4 text-center shadow-sm">
                               <Map className="mx-auto mb-2 h-10 w-10 text-primary" />
                               <p className="text-xs font-medium text-card-foreground">
-                                Bản đồ PDF
+                                Bản đồ
                               </p>
                             </div>
                           </div>

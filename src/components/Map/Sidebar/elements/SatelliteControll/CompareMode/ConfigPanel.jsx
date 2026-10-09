@@ -343,13 +343,11 @@ function ConfigPanel() {
               <p className="flex items-center gap-1.5 font-semibold">
                 <Info className="h-3.5 w-3.5 shrink-0" />
                 {sameSeason && period1Days === period2Days
-                  ? "Hai khoảng thời gian tương đồng"
+                  ? "Hai kỳ cùng mùa và cùng số ngày"
                   : "Nên chọn cùng mùa và cùng số ngày"}
               </p>
               <p className="mt-1">
-                So sánh cùng thời gian giữa hai năm giúp giảm chênh lệch tự
-                nhiên do mùa. Mây và số lượng ảnh khác nhau vẫn có thể làm màu
-                sắc hoặc chỉ số thay đổi.
+                Chọn cùng mùa và cùng số ngày để giảm khác biệt tự nhiên. Mây và số ảnh vẫn có thể ảnh hưởng màu sắc, chỉ số.
               </p>
             </aside>
           </div>

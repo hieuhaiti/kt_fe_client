@@ -63,7 +63,7 @@ const demoAccounts = [
 ];
 
 const schema = z.object({
-  email: z.string().trim().email("Vui lòng nhập đúng địa chỉ email."),
+  email: z.string().trim().email("Email không hợp lệ."),
   password: z.string().min(1, "Vui lòng nhập mật khẩu."),
 });
 
@@ -127,7 +127,7 @@ export default function Login() {
       compact
       eyebrow="Chào mừng trở lại"
       title="Đăng nhập WebGIS"
-      description="Truy cập tài khoản để nhận cảnh báo, quản lý hồ sơ và sử dụng các tiện ích cá nhân."
+      description="Đăng nhập để nhận thông báo và theo dõi phản ánh của bạn."
     >
       {import.meta.env.DEV && (
         <section className="mb-3 rounded-xl border border-info/20 bg-(--info-subtle) p-2.5">
@@ -289,15 +289,14 @@ export default function Login() {
 
         <div className="hidden items-start gap-2 rounded-xl bg-muted/70 px-3 py-2.5 text-xs leading-5 text-muted-foreground sm:flex">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-          Hệ thống chỉ sử dụng thông tin đăng nhập để xác thực và bảo vệ phiên
-          làm việc của bạn.
+          Dùng tài khoản Google để đăng nhập.
         </div>
       </form>
 
       <p className="mt-4 text-center text-sm text-muted-foreground">
         Chưa có tài khoản?{" "}
         <Link to="/register" className="font-bold text-primary hover:underline">
-          Đăng ký ngay
+          Đăng ký
         </Link>
       </p>
     </AuthShell>

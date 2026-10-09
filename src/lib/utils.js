@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-const BASE_URL = import.meta.env.VITE_BASE_URL;
+const BASE_URL = import.meta.env?.VITE_BASE_URL || "";
 const VIETNAM_TIMEZONE = "Asia/Ho_Chi_Minh";
 
 /**
@@ -44,11 +44,13 @@ export function formatPrice(price) {
  * Format date with locale support
  * @param {Date|string} date - Date to format
  * @param {string} [locale='vi-VN'] - Locale string
+ * @param {string} [fallback='-'] - Fallback string when date is invalid or missing
  * @returns {string} Formatted date string
  */
-export function formatDate(date, locale = "vi-VN") {
+export function formatDate(date, locale = "vi-VN", fallback = "-") {
+  if (date == null || date === "") return fallback;
   const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return "-";
+  if (Number.isNaN(parsed.getTime())) return fallback;
 
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",
@@ -60,12 +62,14 @@ export function formatDate(date, locale = "vi-VN") {
 
 /**
  * Format date time with locale support
- * @param {string} dateStr - Date to format
+ * @param {string|Date} dateStr - Date to format
+ * @param {string} [fallback='-'] - Fallback string when date is invalid or missing
  * @returns {string} Formatted date string
  */
-export function formatDateTime(dateStr) {
+export function formatDateTime(dateStr, fallback = "-") {
+  if (dateStr == null || dateStr === "") return fallback;
   const parsed = new Date(dateStr);
-  if (Number.isNaN(parsed.getTime())) return "-";
+  if (Number.isNaN(parsed.getTime())) return fallback;
 
   return new Intl.DateTimeFormat("vi-VN", {
     day: "2-digit",

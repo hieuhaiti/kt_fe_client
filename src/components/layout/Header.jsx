@@ -78,7 +78,7 @@ export default function Header() {
   const handleLogout = async () => {
     try {
       await logout();
-      toast.success("Đăng xuất thành công!");
+      toast.success("Đã đăng xuất.");
       navigate("/login");
       setIsUserMenuOpen(false);
     } catch {
@@ -149,9 +149,9 @@ export default function Header() {
               size="sm"
               onClick={() => setIsOpen((value) => !value)}
               aria-expanded={isOpen}
-              aria-label="Mở menu điều hướng"
+              aria-label="Mở danh mục"
             >
-              Menu
+              Danh mục
               <ChevronDown
                 className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
               />
@@ -213,12 +213,12 @@ export default function Header() {
                         onClick={() => setIsUserMenuOpen((value) => !value)}
                         className="rounded-full"
                         aria-expanded={isUserMenuOpen}
-                        aria-label="Mở menu người dùng"
+                        aria-label="Mở tài khoản"
                       >
                         <User />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Menu người dùng</TooltipContent>
+                    <TooltipContent>Tài khoản</TooltipContent>
                   </Tooltip>
 
                   <NotificationMenu enabled />
@@ -299,7 +299,7 @@ export default function Header() {
                             }}
                           >
                             <Shield />
-                            Chính sách riêng tư
+                            Chính sách quyền riêng tư
                           </Button>
                         </li>
                         <li className="my-1 border-t border-border" />

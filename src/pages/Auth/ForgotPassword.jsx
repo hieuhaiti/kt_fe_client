@@ -35,9 +35,9 @@ export default function ForgotPassword() {
   return (
     <AuthShell
       compact
-      eyebrow="Khôi phục quyền truy cập"
+      eyebrow="Tài khoản"
       title="Quên mật khẩu?"
-      description="Nhập email đã đăng ký. Chúng tôi sẽ gửi cho bạn một liên kết đặt lại mật khẩu an toàn."
+      description="Nhập email đã đăng ký để nhận liên kết đặt lại mật khẩu."
     >
       {sentTo ? (
         <div className="text-center">
@@ -45,12 +45,11 @@ export default function ForgotPassword() {
             <MailCheck className="size-9" />
           </span>
           <h2 className="mt-5 text-lg font-bold text-foreground">
-            Kiểm tra hộp thư của bạn
+            Kiểm tra email
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Hướng dẫn khôi phục đã được gửi tới{" "}
-            <strong className="font-semibold text-foreground">{sentTo}</strong>.
-            Vui lòng kiểm tra cả thư mục spam.
+            <strong className="font-semibold text-foreground">{sentTo}</strong>. Hãy kiểm tra cả thư rác.
           </p>
           <Button
             type="button"
@@ -97,7 +96,7 @@ export default function ForgotPassword() {
             className="h-12 w-full rounded-xl"
           >
             <Send />
-            Gửi liên kết khôi phục
+            Gửi liên kết đặt lại mật khẩu
           </Button>
         </form>
       )}

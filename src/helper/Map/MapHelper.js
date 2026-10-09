@@ -231,6 +231,18 @@ export const initializeDraw = (map, onCreate, onUpdate, onDelete) => {
   });
 
   map.addControl(draw, "bottom-right");
+  const drawLabels = {
+    ".mapbox-gl-draw_line": "Đo chiều dài (2)",
+    ".mapbox-gl-draw_polygon": "Đo diện tích (3)",
+    ".mapbox-gl-draw_trash": "Xóa hình đã chọn",
+  };
+  for (const [selector, label] of Object.entries(drawLabels)) {
+    const button = map.getContainer().querySelector(selector);
+    if (button) {
+      button.setAttribute("title", label);
+      button.setAttribute("aria-label", label);
+    }
+  }
 
   map.on("draw.create", onCreate);
   map.on("draw.update", onUpdate);

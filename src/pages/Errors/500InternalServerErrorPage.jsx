@@ -12,7 +12,7 @@ export default function InternalServerErrorPage() {
           Lỗi máy chủ
         </h1>
         <p className="mt-6 text-lg sm:text-xl font-medium text-muted-foreground">
-          Đã xảy ra lỗi từ phía máy chủ. Vui lòng thử lại sau.
+          Máy chủ gặp lỗi. Hãy thử lại sau.
         </p>
         <div className="mt-10 flex items-center justify-center">
           <Button

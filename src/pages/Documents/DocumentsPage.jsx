@@ -137,8 +137,7 @@ export default function DocumentsPage() {
               Báo cáo và văn bản
             </h1>
             <p className="mt-2  text-sm text-muted-foreground md:text-base">
-              Tra cứu văn bản, báo cáo và tài liệu công khai phục vụ quản lý tài
-              nguyên rừng, môi trường và WebGIS Kon Tum.
+              Tra cứu báo cáo, văn bản về tỉnh Kon Tum.
             </p>
           </div>
         </section>
@@ -202,10 +201,10 @@ export default function DocumentsPage() {
                 <SelectValue placeholder="Hiển thị" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="6">6 mục</SelectItem>
-                <SelectItem value="12">12 mục</SelectItem>
-                <SelectItem value="24">24 mục</SelectItem>
-                <SelectItem value="50">50 mục</SelectItem>
+                <SelectItem value="6">6 / trang</SelectItem>
+                <SelectItem value="12">12 / trang</SelectItem>
+                <SelectItem value="24">24 / trang</SelectItem>
+                <SelectItem value="50">50 / trang</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -238,7 +237,7 @@ export default function DocumentsPage() {
                 <FileText className="mx-auto mb-3 h-12 w-12 text-muted-foreground" />
                 <p className="font-medium">Không tìm thấy tài liệu phù hợp.</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Thử thay đổi từ khóa, loại tài liệu hoặc cách sắp xếp.
+                  Thử từ khóa hoặc loại tài liệu khác.
                 </p>
               </div>
             ) : (
@@ -277,7 +276,7 @@ export default function DocumentsPage() {
                             {item.fallbackUsed && (
                               <Badge variant="soft-warning">
                                 <Languages />
-                                Bản dịch dự phòng
+                                Ngôn ngữ khác
                               </Badge>
                             )}
                           </div>

@@ -147,7 +147,7 @@ export async function apiRequest(endpoint, options = {}) {
     response = await fetch(url, requestOptions);
   } catch (cause) {
     const error = new Error(
-      "Không thể kết nối tới máy chủ. Vui lòng kiểm tra đường truyền.",
+      "Không thể kết nối máy chủ. Hãy kiểm tra mạng rồi thử lại.",
       { cause },
     );
     error.status = 0;

@@ -206,7 +206,7 @@ export default function FeedbackForm({
           id="feedback-description"
           value={form.description}
           maxLength={2000}
-          placeholder="Mô tả ngắn gọn hiện trạng, dấu hiệu, thời điểm phát hiện..."
+          placeholder="Mô tả sự việc và thời điểm phát hiện..."
           className="min-h-28"
           onChange={(event) => updateField("description", event.target.value)}
         />

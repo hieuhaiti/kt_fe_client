@@ -24,14 +24,14 @@ export const LABELS = {
   reset: "Đặt lại",
 
   // Config panel titles
-  configTitle: "Cấu hình",
-  configCompareTitle: "Cấu hình so sánh",
+  configTitle: "Thiết lập",
+  configCompareTitle: "Thiết lập so sánh",
 
   // Tooltip
   loadingTooltip: "Đang tải...",
 
   // Errors
-  errorNoRoi: "Không thể tải dữ liệu ROI. Vui lòng tải lại trang.",
+  errorNoRoi: "Không thể tải ranh giới khu vực phân tích. Hãy tải lại trang.",
   errorNoLayer: "Vui lòng chọn ít nhất 1 loại ảnh",
   errorInvalidDate: "Ngày không hợp lệ. Vui lòng chọn lại.",
   errorDateOrder: "Ngày bắt đầu phải trước ngày kết thúc",

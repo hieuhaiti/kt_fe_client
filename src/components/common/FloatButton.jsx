@@ -41,7 +41,7 @@ export default function FloatButton() {
             type="button"
             variant="gradient-primary"
             size="icon-lg"
-            className="fixed right-10 bottom-6 z-40 rounded-full shadow-lg"
+            className="fixed right-4 sm:right-10 bottom-4 sm:bottom-6 z-40 rounded-full shadow-lg"
             onClick={() => setOpen(true)}
             aria-label="Gửi phản ánh hiện trường"
           >
@@ -56,8 +56,7 @@ export default function FloatButton() {
           <DialogHeader>
             <DialogTitle>Gửi phản ánh hiện trường</DialogTitle>
             <DialogDescription>
-              Gửi thông tin kèm tọa độ và hình ảnh để cơ quan chức năng tiếp
-              nhận xử lý.
+              Mô tả sự việc, kèm vị trí và ảnh nếu có.
             </DialogDescription>
           </DialogHeader>
           <FeedbackForm

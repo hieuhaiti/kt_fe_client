@@ -97,11 +97,10 @@ export default function NewsPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-(--text-primary) mb-2">
-            Tin Tức
+            Tin tức
           </h1>
           <p className="text-muted-foreground">
-            Cập nhật thông tin nhanh chóng và chính xác để bạn luôn nắm bắt được
-            những diễn biến mới nhất
+            Tin tức về tỉnh Kon Tum
           </p>
         </div>
 
@@ -130,7 +129,7 @@ export default function NewsPage() {
             <SelectContent>
               <SelectItem value="published_at-DESC">Mới nhất</SelectItem>
               <SelectItem value="published_at-ASC">Cũ nhất</SelectItem>
-              <SelectItem value="created_at-DESC">Ngày tạo mới</SelectItem>
+              <SelectItem value="created_at-DESC">Mới tạo</SelectItem>
               <SelectItem value="title-ASC">Theo tiêu đề</SelectItem>
             </SelectContent>
           </Select>
@@ -144,10 +143,10 @@ export default function NewsPage() {
               <SelectValue placeholder="Hiển thị" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="6">6 tin</SelectItem>
-              <SelectItem value="12">12 tin</SelectItem>
-              <SelectItem value="24">24 tin</SelectItem>
-              <SelectItem value="50">50 tin</SelectItem>
+              <SelectItem value="6">6 / trang</SelectItem>
+              <SelectItem value="12">12 / trang</SelectItem>
+              <SelectItem value="24">24 / trang</SelectItem>
+              <SelectItem value="50">50 / trang</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -180,7 +179,7 @@ export default function NewsPage() {
             {newsData.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-(--text-secondary)">
-                  Không tìm thấy tin tức nào
+                  Không tìm thấy tin tức phù hợp
                 </p>
               </div>
             ) : (
@@ -257,7 +256,7 @@ export default function NewsPage() {
                           </h2>
 
                           <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">
-                            {news.summary || "Nội dung tóm tắt đang cập nhật."}
+                            {news.summary || "Chưa có tóm tắt."}
                           </p>
 
                           <div className="mt-auto pt-5">
@@ -265,7 +264,7 @@ export default function NewsPage() {
                               <span className="inline-flex min-w-0 items-center gap-1.5">
                                 <User className="h-3.5 w-3.5 shrink-0" />
                                 <span className="truncate">
-                                  {news.authorName || "Ban biên tập"}
+                                  {news.authorName || "Chưa có thông tin tác giả"}
                                 </span>
                               </span>
                               {hasViewCount && (
@@ -276,7 +275,7 @@ export default function NewsPage() {
                             </div>
 
                             <div className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary">
-                              Đọc chi tiết
+                              Đọc bài viết
                               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
                             </div>
                           </div>

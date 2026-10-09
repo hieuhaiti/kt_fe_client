@@ -16,8 +16,8 @@ import { Button } from "../../components/ui/button";
 const capabilities = [
   { icon: Trees, label: "Tài nguyên rừng", value: "11 lớp phủ" },
   { icon: Flame, label: "Cảnh báo cháy", value: "5 cấp độ" },
-  { icon: CloudSun, label: "Thời tiết", value: "Theo thời gian" },
-  { icon: BellRing, label: "Thông báo", value: "Trực tiếp" },
+  { icon: CloudSun, label: "Thời tiết", value: "Xem tại điểm" },
+  { icon: BellRing, label: "Thông báo", value: "Mới nhất" },
 ];
 
 export default function AuthShell({
@@ -58,18 +58,17 @@ export default function AuthShell({
           <div className="max-w-2xl py-[clamp(1rem,3vh,2.5rem)]">
             <span className="mb-[clamp(1rem,2.4vh,1.5rem)] inline-flex items-center gap-2 rounded-full border border-primary/15 bg-card/70 px-3.5 py-2 text-sm font-semibold text-primary shadow-sm backdrop-blur-xl">
               <ShieldCheck className="size-4" />
-              Dữ liệu tin cậy · Tra cứu thuận tiện
+              Tra cứu bản đồ Kon Tum
             </span>
 
             <h2 className="max-w-xl text-balance text-[clamp(2.5rem,4.2vw,3.75rem)] font-bold leading-[1.08] tracking-tight text-foreground">
-              Một bản đồ,
+              Bản đồ Kon Tum
               <span className="block bg-(image:--gradient-primary-secondary) bg-clip-text text-transparent">
-                nhiều góc nhìn về Kon Tum.
+                Rừng, thời tiết và nguy cơ cháy
               </span>
             </h2>
             <p className="mt-[clamp(1rem,2.4vh,1.5rem)] max-w-xl text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
-              Tiếp cận dữ liệu rừng, môi trường, ảnh vệ tinh, thời tiết và cảnh
-              báo cháy trên cùng một không gian bản đồ trực quan.
+              Tra cứu rừng, môi trường, ảnh vệ tinh và thời tiết ngay trên bản đồ.
             </p>
 
             <div className="mt-[clamp(1.25rem,3vh,2.25rem)] grid max-w-xl grid-cols-2 gap-3">
@@ -100,7 +99,7 @@ export default function AuthShell({
             <span>© 2026 WebGIS/MobileGIS Kon Tum</span>
             <span className="inline-flex items-center gap-1.5">
               <Layers3 className="size-3.5" />
-              Nền tảng GIS phục vụ cộng đồng
+              Bản đồ rừng và môi trường Kon Tum
             </span>
           </div>
         </section>

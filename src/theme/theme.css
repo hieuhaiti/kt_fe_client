@@ -1,6 +1,15 @@
 /* ==== THEME CONFIGURATION ==== */
 /* Civic GIS palette for a public-facing user portal. */
 :root {
+  /* KONTUM logo palette — independent of map data and UI status colors. */
+  --brand-logo-font: Arial, Helvetica, sans-serif;
+  --brand-logo-forest: #0f5132;
+  --brand-logo-emerald: #1f8a5b;
+  --brand-logo-sage: #9cc47d;
+  --brand-logo-sun: #f59e0b;
+  --brand-logo-shadow: #063c29;
+  --brand-logo-snow: #ffffff;
+  --brand-logo-surface: #f4f7fa;
   --radius: 0.5rem;
   --transition-fast: 160ms;
   --transition-normal: 240ms;

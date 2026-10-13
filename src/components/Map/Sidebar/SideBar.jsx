@@ -1,6 +1,7 @@
 import { trackMapping } from "@/constant/sidebarData";
 import HighlightHandle from "./elements/Datalyer/HighlightHandle";
 import { useMapStore } from "../../../stores/Map/useMapStore";
+import { cn } from "@/lib/utils";
 
 export default function Sidebar() {
   const activePanel = useMapStore((s) => s.activePanel);
@@ -16,7 +17,7 @@ export default function Sidebar() {
         <div className="sticky top-0 z-10 px-3 py-2 bg-card border-b border-border flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {activeItem.icon && (
-              <activeItem.icon className="w-4 h-4 text-primary shrink-0" />
+              <activeItem.icon className={cn("w-4 h-4 shrink-0", activeItem.color || "text-primary")} strokeWidth={2} />
             )}
             <h3 className="text-sm font-semibold text-foreground truncate">
               {activeItem.label}

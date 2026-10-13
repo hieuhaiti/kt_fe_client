@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+<title>Biểu tượng Kon Tum đơn sắc</title>
+<defs><mask id="kontum-mono" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+  <!-- KONTUM brand artwork: forest #0F5132, emerald #1F8A5B, orange #F59E0B. -->
+  <circle cx="74" cy="22" r="15" fill="#FFFFFF" />
+  <!-- Mountain silhouette and evergreen ridges. -->
+  <path d="M5 89 9 65 29 42 46 19 58 33 65 29 96 89Z" fill="#FFFFFF" />
+  <path d="M9 65 29 42 46 19 51 47 33 53 20 72 5 89Z" fill="#FFFFFF" />
+  <path d="M29 42 46 19 58 33 65 29 78 56 62 48 56 51 45 38 36 50Z" fill="#FFFFFF" />
+  <!-- Snow-capped peaks; outlined by the mountain underneath. -->
+  <path d="M32 40 46 25 57 39 64 35 72 50 60 42 57 46 46 33 38 43Z" fill="#000000" />
+  <path d="M9 66 24 55 33 58 43 48 55 56 64 51 81 65 74 67 62 60 55 63 44 56 33 66 24 62 13 75 7 77Z" fill="#FFFFFF" />
+  <path d="M11 75 20 66 24 71 32 64 41 67 50 60 59 66 66 63 84 75 96 89 5 89Z" fill="#FFFFFF" />
+  <path d="M7 82 17 73 21 79 27 71 32 76 39 72 46 79 53 75 61 79 68 73 76 80 82 78 88 89H5Z" fill="#FFFFFF" />
+  <!-- White winding river: narrow at the source, broad in the foreground. -->
+  <path d="M47 43C61 46 58 50 47 54C35 58 31 61 37 65C42 68 58 70 66 76C72 81 74 85 75 89H40C50 83 48 79 38 75C21 68 20 61 33 56C44 52 55 50 52 47C51 46 49 45 47 43Z" fill="#000000" />
+</mask></defs>
+<rect width="100" height="100" fill="#FFFFFF" mask="url(#kontum-mono)" />
+</svg>

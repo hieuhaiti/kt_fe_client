@@ -26,6 +26,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import NewsLayout from "../../layout/NewsLayout";
 import { cn, formatDate, praseLink } from "../../lib/utils";
 import { SkeletonCard } from "./Skeleton";
+import NewsThumbnail from "./NewsThumbnail";
 
 export default function NewsPage() {
   const navigate = useNavigate();
@@ -191,7 +192,7 @@ export default function NewsPage() {
                     </div>
                   )}
 
-                  {newsData.map((news, index) => {
+                  {newsData.map((news) => {
                     const viewCount = Number(news.viewCount);
                     const hasViewCount =
                       Number.isFinite(viewCount) && viewCount > 0;
@@ -212,14 +213,10 @@ export default function NewsPage() {
                       >
                         <div className="relative h-52 overflow-hidden bg-muted">
                           {news.coverUrl ? (
-                            <img
+                            <NewsThumbnail
+                              key={news.coverUrl}
                               src={praseLink(news.coverUrl)}
                               alt={news.title}
-                              loading={index > 2 ? "lazy" : "eager"}
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
                             />
                           ) : (
                             <div className="flex h-full items-center justify-center bg-muted">

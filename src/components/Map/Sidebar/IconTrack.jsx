@@ -6,6 +6,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { trackMapping } from "@/constant/sidebarData";
 import { useMapStore } from "@/stores/Map/useMapStore";
+import { cn } from "@/lib/utils";
 
 /**
  * Floating horizontal control bar - đặt trên top-center của map.
@@ -17,7 +18,7 @@ export default function IconTrack() {
 
   return (
     <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
-      <div className="flex items-center gap-1 p-1 rounded-lg bg-card/90 backdrop-blur-sm border border-border shadow-lg">
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-card/95 backdrop-blur-md border border-border/80 shadow-md">
         {trackMapping.map((item) => {
           const Icon = item.icon;
           const isActive = activePanel === item.id;
@@ -29,17 +30,27 @@ export default function IconTrack() {
                   size="sm"
                   variant={isActive ? "soft-primary" : "ghost"}
                   onClick={() => setActivePanel(item.id)}
-                  className="h-9 px-2 sm:px-3 gap-1.5 sm:gap-2 rounded-md"
+                  className={cn(
+                    "group h-9 px-2.5 sm:px-3 gap-1.5 sm:gap-2 rounded-lg transition-all",
+                    isActive && "font-semibold shadow-xs"
+                  )}
                   id={`map-sidebar-tab-${item.id}`}
                   aria-label={item.label}
                   aria-pressed={isActive}
                 >
-                  <Icon className={`w-4 h-4 shrink-0 ${item.color || ""}`} />
-                  <span className="text-sm font-medium hidden xl:inline">{item.label}</span>
+                  <Icon
+                    className={cn(
+                      "w-4 h-4 shrink-0 transition-transform group-hover:scale-110",
+                      isActive ? "scale-105" : "opacity-85",
+                      item.color || ""
+                    )}
+                    strokeWidth={isActive ? 2.2 : 1.8}
+                  />
+                  <span className="text-xs sm:text-sm hidden xl:inline">{item.label}</span>
                 </Button>
               </TooltipTrigger>
               {item.description && (
-                <TooltipContent side="bottom" className="border-border max-w-xs">
+                <TooltipContent side="bottom" sideOffset={6} className="border-border text-xs max-w-xs">
                   {item.description}
                 </TooltipContent>
               )}

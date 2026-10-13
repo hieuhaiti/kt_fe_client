@@ -54,8 +54,8 @@ export default function AuthShell({
               size={42}
               className="transition-transform group-hover:scale-105"
             />
-            <span className="text-2xl font-bold tracking-tight text-foreground transition-colors group-hover:text-[#0B5EA7]">
-              WebGIS <span className="text-[#0F5132]">Kon Tum</span>
+            <span className="text-2xl font-bold tracking-tight text-foreground transition-colors group-hover:text-(--brand-logo-emerald)">
+              WebGIS <span className="text-(--brand-logo-forest)">Kon Tum</span>
             </span>
           </Button>
 
@@ -118,7 +118,7 @@ export default function AuthShell({
               >
                 <KonTumLogo variant="icon" size={32} />
                 <span className="text-lg tracking-tight">
-                  WebGIS <span className="text-[#0F5132]">Kon Tum</span>
+                  WebGIS <span className="text-(--brand-logo-forest)">Kon Tum</span>
                 </span>
               </Link>
               <Link

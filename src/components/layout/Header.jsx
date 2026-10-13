@@ -115,8 +115,8 @@ export default function Header() {
               className="transition-transform group-hover:scale-105"
             />
             {!isLargeDesktop && (
-              <span className="hidden sm:inline text-xl font-bold tracking-tight text-foreground transition-colors group-hover:text-[#0B5EA7]">
-                WebGIS <span className="text-[#0F5132]">Kon Tum</span>
+              <span className="hidden sm:inline text-xl font-bold tracking-tight text-foreground transition-colors group-hover:text-(--brand-logo-emerald)">
+                WebGIS <span className="text-(--brand-logo-forest)">Kon Tum</span>
               </span>
             )}
           </Button>

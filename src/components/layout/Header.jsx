@@ -7,11 +7,11 @@ import {
   LogOut,
   MessageSquare,
   Shield,
-  ShieldUser,
   Smartphone,
   User,
 } from "lucide-react";
 import { toast } from "react-toastify";
+import KonTumLogo from "@/components/common/KonTumLogo";
 import NotificationMenu from "@/components/common/NotificationMenu";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,12 +106,17 @@ export default function Header() {
             type="button"
             variant="ghost-transparent"
             onClick={() => navigate("/")}
-            className="group h-auto gap-2 px-1"
+            className="group h-auto gap-2.5 px-1 hover:bg-transparent"
+            aria-label="Về trang chủ WebGIS Kon Tum"
           >
-            <ShieldUser className="size-8 text-(--brand-lime) transition-transform group-hover:scale-110" />
+            <KonTumLogo
+              variant="icon"
+              size={36}
+              className="transition-transform group-hover:scale-105"
+            />
             {!isLargeDesktop && (
-              <span className="hidden sm:inline text-xl font-bold text-foreground transition-colors group-hover:text-(--brand-lime)">
-                WebGIS Kon Tum
+              <span className="hidden sm:inline text-xl font-bold tracking-tight text-foreground transition-colors group-hover:text-[#0B5EA7]">
+                WebGIS <span className="text-[#0F5132]">Kon Tum</span>
               </span>
             )}
           </Button>

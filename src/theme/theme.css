@@ -17,7 +17,13 @@
   --secondary-foreground: #ffffff;
   --accent: #e8f3ec;
   --accent-foreground: #14532d;
-  --brand-forest: #14763f;
+  /* Kon Tum Brand Palette (Nature Connects People) */
+  --brand-forest: #0f5132;
+  --brand-highland: #2e7d4b;
+  --brand-river: #2d9cdb;
+  --brand-deep-blue: #0b5ea7;
+  --brand-earth: #d4943f;
+  --brand-mist: #f4f7fa;
   --brand-lime: #7ccf3b;
   --brand-teal: #0ea5a2;
   --brand-sky: #1687d9;

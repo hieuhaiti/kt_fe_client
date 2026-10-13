@@ -6,11 +6,10 @@ import {
   CloudSun,
   Flame,
   Layers3,
-  MapPinned,
   ShieldCheck,
-  ShieldUser,
   Trees,
 } from "lucide-react";
+import KonTumLogo from "@/components/common/KonTumLogo";
 import { Button } from "../../components/ui/button";
 
 const capabilities = [
@@ -47,11 +46,16 @@ export default function AuthShell({
             type="button"
             variant="ghost-transparent"
             onClick={() => navigate("/")}
-            className="group h-auto gap-2 px-1"
+            className="group h-auto gap-3 px-1 hover:bg-transparent"
+            aria-label="Về trang chủ WebGIS Kon Tum"
           >
-            <ShieldUser className="size-8 text-(--brand-lime) transition-transform group-hover:scale-110" />
-            <span className="text-xl font-bold text-foreground transition-colors group-hover:text-(--brand-lime)">
-              WebGIS Kon Tum
+            <KonTumLogo
+              variant="icon"
+              size={42}
+              className="transition-transform group-hover:scale-105"
+            />
+            <span className="text-2xl font-bold tracking-tight text-foreground transition-colors group-hover:text-[#0B5EA7]">
+              WebGIS <span className="text-[#0F5132]">Kon Tum</span>
             </span>
           </Button>
 
@@ -109,12 +113,13 @@ export default function AuthShell({
             <div className="mb-[clamp(0.5rem,1.6vh,1.5rem)] flex items-center justify-between lg:hidden">
               <Link
                 to="/map"
-                className="inline-flex items-center gap-2.5 font-bold text-foreground"
+                className="inline-flex items-center gap-2 font-bold text-foreground"
+                aria-label="Về bản đồ WebGIS Kon Tum"
               >
-                <span className="grid size-9 place-items-center rounded-xl bg-(image:--gradient-primary) text-(--gradient-foreground)">
-                  <MapPinned className="size-5" />
+                <KonTumLogo variant="icon" size={32} />
+                <span className="text-lg tracking-tight">
+                  WebGIS <span className="text-[#0F5132]">Kon Tum</span>
                 </span>
-                WebGIS Kon Tum
               </Link>
               <Link
                 to="/map"

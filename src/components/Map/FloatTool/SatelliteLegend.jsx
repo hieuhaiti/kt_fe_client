@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, Layers, Map, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Layers, Map, ThermometerSun, X } from "lucide-react";
 import { useSatelliteStore } from "@/stores/Map/Sidebar/useSatelliteStore";
 import { useDataLayerStore } from "@/stores/Map/Sidebar/useDataLayerStore";
 import { useMapStore } from "@/stores/Map/useMapStore";
@@ -264,9 +264,9 @@ function MapLayerLegendGroup({ layer, defaultOpen = true }) {
 }
 
 /**
- * Individual legend group for one Time-series raster layer group.
+ * Individual legend group for a raster layer group.
  */
-function TimeSeriesLegendGroup({ item, defaultOpen = true }) {
+function RasterLegendGroup({ item, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
 
   if (!item.entries || item.entries.length === 0) return null;
@@ -294,7 +294,7 @@ function TimeSeriesLegendGroup({ item, defaultOpen = true }) {
             >
               {formatDisplayName(displayName, 70)}
             </span>
-            <span className="text-[10px] text-foreground/45 leading-tight truncate mt-0.5 max-w-full">
+            <span className={`text-[10px] text-foreground/45 leading-tight mt-0.5 max-w-full ${item.note ? "break-words" : "truncate"}`}>
               {item.subtitle}
             </span>
           </div>
@@ -308,19 +308,41 @@ function TimeSeriesLegendGroup({ item, defaultOpen = true }) {
       {open && (
         <div className="space-y-1.5 pl-1.5 pr-0.5">
           {item.entries.map((entry, i) => (
-            <div key={i} className="flex items-center gap-2 min-w-0">
-              <div
-                className="w-3 h-3 rounded-xs shrink-0 border border-white/20 shadow-xs"
-                style={{ backgroundColor: entry.color }}
-              />
-              <span
-                className="text-xs text-foreground/80 truncate min-w-0 flex-1"
-                title={entry.label}
-              >
-                {entry.label}
-              </span>
+            <div key={i} className="space-y-0.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  className="w-3 h-3 rounded-xs shrink-0 border border-white/20 shadow-xs"
+                  style={{ backgroundColor: entry.color }}
+                  aria-hidden="true"
+                />
+                <span
+                  className={`text-xs text-foreground/80 min-w-0 flex-1 ${item.note || entry.areaLabel ? "break-words" : "truncate"} ${entry.isForest ? "font-medium" : ""}`}
+                  title={entry.description || entry.label}
+                >
+                  {entry.label}
+                </span>
+              </div>
+              {entry.areaLabel != null && (
+                <div className="flex items-center justify-between gap-2 pl-5 text-[10px] tabular-nums">
+                  <span className="text-muted-foreground">{entry.percentageLabel}</span>
+                  <span className="font-medium text-foreground">{entry.areaLabel}</span>
+                </div>
+              )}
             </div>
           ))}
+          {item.totalAreaLabel != null && (
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-2 text-xs font-semibold tabular-nums text-foreground">
+              <span>Tổng cộng</span>
+              <span className="text-[10px] font-normal text-muted-foreground">{item.totalPercentageLabel}</span>
+              <span>{item.totalAreaLabel}</span>
+            </div>
+          )}
+          {item.note && (
+            <div className="mt-2 flex items-start gap-2 border-t border-border pt-2 text-[10px] leading-relaxed text-muted-foreground">
+              <ThermometerSun className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+              <span>{item.note}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -336,6 +358,8 @@ export function SatelliteLegend() {
 
   const ogcLayers = useDataLayerStore((s) => s.ogcLayers);
   const timeSeriesLayersData = useMapStore((s) => s.timeSeriesLayersData);
+  const fireRiskLegend = useMapStore((s) => s.fireRiskLegend);
+  const forestClassificationLegend = useMapStore((s) => s.forestClassificationLegend);
 
   // In compare mode, use ALL comparison images so every loaded layer type
   // (ndvi, heatmap, rgb, …) appears in the legend, not just the active one.
@@ -381,12 +405,16 @@ export function SatelliteLegend() {
     })
     .filter(Boolean);
 
-  const totalCount = satLegendLayers.length + ogcLegendLayers.length + timeSeriesLegendGroups.length;
+  const otherCount = satLegendLayers.length + ogcLegendLayers.length + timeSeriesLegendGroups.length;
+  const totalCount = otherCount + (fireRiskLegend ? 1 : 0) + (forestClassificationLegend ? 1 : 0);
 
   if (totalCount === 0) return null;
 
-  const titleText =
-    (satLegendLayers.length > 0 && (ogcLegendLayers.length > 0 || timeSeriesLegendGroups.length > 0))
+  const titleText = forestClassificationLegend
+    ? (totalCount > 1 ? "Chú giải bản đồ" : "Chú giải lớp phủ")
+    : fireRiskLegend
+      ? (otherCount > 0 ? "Chú giải bản đồ" : "Chú giải nguy cơ cháy rừng")
+    : (satLegendLayers.length > 0 && (ogcLegendLayers.length > 0 || timeSeriesLegendGroups.length > 0))
       ? "Chú giải bản đồ"
       : (timeSeriesLegendGroups.length > 0 && ogcLegendLayers.length === 0 && satLegendLayers.length === 0)
         ? "Chú giải chuỗi thời gian"
@@ -464,9 +492,17 @@ export function SatelliteLegend() {
       {!collapsed && (
         <div className="px-3 pb-3 space-y-3 max-h-[min(380px,60vh)] overflow-y-auto border-t border-border/40">
           <div className="pt-2 space-y-2.5">
+            {fireRiskLegend && (
+              <RasterLegendGroup key="fire-risk" item={fireRiskLegend} />
+            )}
+
+            {forestClassificationLegend && (
+              <RasterLegendGroup key="forest-classification" item={forestClassificationLegend} />
+            )}
+
             {/* Time-series Raster Layers */}
             {timeSeriesLegendGroups.map((group) => (
-              <TimeSeriesLegendGroup
+              <RasterLegendGroup
                 key={`ts-${group.groupCode}`}
                 item={group}
                 defaultOpen={totalCount <= 2}

@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
-  ThermometerSun,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -1060,12 +1059,12 @@ function LabelWithTooltip({ label, tip, wide = false }) {
 
 export function MonitoringAndAlerting() {
   const mapInstance = useMapStore((s) => s.mapInstance);
+  const setFireRiskLegend = useMapStore((s) => s.setFireRiskLegend);
 
   const [view, setView] = useState(null); // extractProvinceView() output
   const [rasterTileUrl, setRasterTileUrl] = useState(null);
   const [districtRasterTiles, setDistrictRasterTiles] = useState([]);
   const [rasterSource, setRasterSource] = useState(null);
-  const [districtRasterReadiness, setDistrictRasterReadiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -1124,7 +1123,6 @@ export function MonitoringAndAlerting() {
 
           const payload = res?.data ?? res;
           const raster = toStableFireDistrictRaster(payload);
-          setDistrictRasterReadiness(raster);
 
           if (raster.districtTiles.length > 0) {
             setDistrictRasterTiles(raster.districtTiles);
@@ -1180,7 +1178,6 @@ export function MonitoringAndAlerting() {
     setRasterTileUrl(null);
     setDistrictRasterTiles([]);
     setRasterSource(null);
-    setDistrictRasterReadiness(null);
 
     const controller = new AbortController();
     requestAbortRef.current = controller;
@@ -1234,7 +1231,6 @@ export function MonitoringAndAlerting() {
 
           const districtPayload = districtRes?.data ?? districtRes;
           const raster = toStableFireDistrictRaster(districtPayload);
-          setDistrictRasterReadiness(raster);
           if (raster.districtTiles.length > 0) {
             setDistrictRasterTiles(raster.districtTiles);
             setRasterTileUrl(null);
@@ -1414,7 +1410,6 @@ export function MonitoringAndAlerting() {
 
     const raster = toStableFireDistrictRaster(publishedCurrent);
     if (!raster.stable) return;
-    setDistrictRasterReadiness(raster);
     setRasterTileUrl(currentPreviewTileUrl || raster.tileUrl);
     setRasterSource(currentPreviewTileUrl ? "province" : "geoserver");
     stopDistrictPoll();
@@ -1545,6 +1540,63 @@ export function MonitoringAndAlerting() {
     return runWhenStyleReady(mapInstance, apply);
   }, [mapInstance, historyLayers, historyItems]);
 
+  // Chú giải nổi dùng cùng palette với thống kê và chỉ hiện khi có raster bật.
+  useEffect(() => {
+    if (!mapInstance) {
+      setFireRiskLegend(null);
+      return;
+    }
+
+    const apply = () => {
+      const dates = [];
+      if (
+        view &&
+        layerVisible.heat &&
+        heatOpacity > 0 &&
+        (rasterTileUrl || districtRasterTiles.length > 0)
+      ) {
+        const date = formatFireAnalysisDate(view.snapshot?.analysisDate);
+        dates.push(date ? `Ngày phân tích: ${date}` : "Bản đồ hiện tại");
+      }
+      for (const [id, cfg] of Object.entries(historyLayers)) {
+        const item = historyItems.find((historyItem) => historyItem.id === id);
+        if (
+          item?.layerTiles?.length &&
+          cfg.visible !== false &&
+          (cfg.opacity ?? 0.5) > 0
+        ) {
+          dates.push(`Lịch sử: ${formatFireAnalysisDate(item.analysisDate)}`);
+        }
+      }
+      setFireRiskLegend(
+        dates.length
+          ? {
+              name: "Nguy cơ cháy rừng",
+              subtitle: dates.join(" · "),
+              entries: Object.values(RISK_LEVELS).map(({ color, label }) => ({
+                color,
+                label,
+              })),
+              note: "Khu vực không hiển thị: chưa đủ dữ liệu ảnh trong 30 ngày.",
+            }
+          : null,
+      );
+    };
+    return runWhenStyleReady(mapInstance, apply);
+  }, [
+    mapInstance,
+    setFireRiskLegend,
+    view,
+    layerVisible.heat,
+    heatOpacity,
+    rasterTileUrl,
+    districtRasterTiles.length,
+    historyLayers,
+    historyItems,
+  ]);
+
+  useEffect(() => () => setFireRiskLegend(null), [mapInstance, setFireRiskLegend]);
+
   // Effect F — Cleanup CHỈ khi unmount. Không có deps → không chạy giữa chừng.
   useEffect(() => {
     return () => {
@@ -1653,7 +1705,6 @@ export function MonitoringAndAlerting() {
                 rasterSource === "province" ? view.geeDownloadUrl : null
               }
               geeDownloadFilename={view.geeDownloadFilename}
-              districtRasterReadiness={districtRasterReadiness}
               layerVisible={layerVisible}
               onLayerToggle={(id) =>
                 setLayerVisible((s) => ({ ...s, [id]: !s[id] }))
@@ -1717,35 +1768,6 @@ export function MonitoringAndAlerting() {
 
             {/* History browser đã move lên trên (ngang "Nguồn dữ liệu và cách tính"). */}
 
-            {/* Chú giải cấp — 1 cột khi hẹp, 2 cột khi rộng */}
-            <div className="rounded-lg border border-border bg-card/40 p-3">
-              <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
-                Chú giải nguy cơ cháy rừng
-              </p>
-              <div className="grid grid-cols-1 gap-1.5 @[380px]/fire:grid-cols-2">
-                {[1, 2, 3, 4, 5].map((l) => {
-                  const meta = getRiskMeta(l);
-                  return (
-                    <div
-                      key={l}
-                      className="flex items-center gap-2 text-[11px]"
-                    >
-                      <span
-                        className="inline-block h-3 w-3 shrink-0 rounded-sm"
-                        style={{ backgroundColor: meta.color }}
-                      />
-                      <span className="truncate">{meta.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-                <ThermometerSun className="h-3 w-3 shrink-0" />
-                <span>
-                  Khu vực không hiển thị: chưa đủ dữ liệu ảnh trong 30 ngày.
-                </span>
-              </div>
-            </div>
             {/* KPI — 1 cột khi hẹp, 2 cột từ 280px */}
             <div className="grid grid-cols-1 gap-2 @[280px]/fire:grid-cols-2">
               <KpiCard
@@ -1911,7 +1933,6 @@ export function MonitoringAndAlerting() {
 function FireRiskLayerManager({
   geeDownloadUrl,
   geeDownloadFilename,
-  districtRasterReadiness,
   layerVisible,
   onLayerToggle,
   heatOpacity,
@@ -1922,18 +1943,10 @@ function FireRiskLayerManager({
   onHistoryRemove,
   onResetDefaults,
 }) {
-  const readyCount = districtRasterReadiness?.ready ?? 0;
-  const totalDistricts = districtRasterReadiness?.total ?? 0;
-  const districtProgress =
-    totalDistricts > 0
-      ? `${readyCount}/${totalDistricts} huyện đã có ảnh chi tiết`
-      : null;
-
   const baseRows = [
     {
       id: "heat",
       label: "Vùng nguy cơ cháy rừng",
-      description: districtProgress,
       dot: "bg-warning",
       riskRamp: true,
       visible: layerVisible.heat,
@@ -2011,29 +2024,11 @@ function FireRiskLayerRow({ row }) {
       className={`rounded border border-border/60 bg-background/40 p-1.5 transition-opacity ${row.visible ? "" : "opacity-60"}`}
     >
       <div className="flex items-center gap-1.5">
-        {row.riskRamp ? (
-          <span aria-hidden="true" className="flex h-3 w-8 shrink-0 overflow-hidden rounded-sm ring-1 ring-border">
-            {Object.values(RISK_LEVELS).map((level) => (
-              <span key={level.label} className="flex-1" style={{ backgroundColor: level.color }} />
-            ))}
-          </span>
-        ) : (
-          <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${row.dot}`} />
-        )}
+       
         {/* Sidebar hẹp thường truncate tên; hover hiện đầy đủ nhãn lớp. */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="min-w-0 flex-1 cursor-help truncate text-[11px] font-medium">
+         <span className="min-w-0 flex-1 cursor-help truncate text-[11px] font-medium">
               {row.label}
             </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-72">
-            <p className="font-semibold">{row.label}</p>
-            {row.description && (
-              <p className="mt-0.5 text-xs">{row.description}</p>
-            )}
-          </TooltipContent>
-        </Tooltip>
         <Button
           type="button"
           variant="ghost"

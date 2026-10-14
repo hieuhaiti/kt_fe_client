@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BarChart3,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -136,31 +135,6 @@ function StatusBadge({ status }) {
     return <Badge variant="soft-warning">Đang tạo bản đồ</Badge>;
   if (status === "cancelled") return <Badge variant="outline">Đã hủy</Badge>;
   return <Badge variant="outline">Chưa xác định</Badge>;
-}
-
-function ClassRow({ classId, name, areaHa, totalHa }) {
-  const isForest = FOREST_CLASS_IDS.includes(classId);
-  const pct = totalHa > 0 ? ((areaHa / totalHa) * 100).toFixed(1) : 0;
-  return (
-    <div className="grid grid-cols-[0.75rem_minmax(0,1fr)_4.75rem] items-center gap-2 py-1.5 text-xs @[340px]/forest:grid-cols-[0.75rem_minmax(0,1fr)_2.5rem_5rem]">
-      <span
-        className="h-3 w-3 shrink-0 rounded-sm border border-border/40"
-        style={{ backgroundColor: CLASS_PALETTE[classId] ?? "#ccc" }}
-      />
-      <span
-        title={CLASS_HELP[classId] || name}
-        className={`flex-1 truncate ${isForest ? "font-medium text-foreground" : "text-muted-foreground"}`}
-      >
-        {name}
-      </span>
-      <span className="hidden text-right tabular-nums text-muted-foreground @[340px]/forest:block">
-        {pct}%
-      </span>
-      <span className="text-right font-medium tabular-nums text-foreground">
-        {formatArea(areaHa)}
-      </span>
-    </div>
-  );
 }
 
 function formatPeriodLabel(period) {
@@ -804,6 +778,9 @@ function getForestRasterIds(map) {
 
 export function ForestClassification() {
   const mapInstance = useMapStore((state) => state.mapInstance);
+  const setForestClassificationLegend = useMapStore(
+    (state) => state.setForestClassificationLegend,
+  );
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [querying, setQuerying] = useState(false);
@@ -1360,14 +1337,16 @@ export function ForestClassification() {
       )
     : [];
   const activeMapLayer = Object.values(mapLayers)[0] ?? null;
-  const hasDistrictAggregateClasses =
-    Object.keys(districtAggregate?.byClass ?? {}).length > 0;
-  const summarySource = activeMapLayer
-    ? hasDistrictAggregateClasses
-      ? { byClass: districtAggregate.byClass }
-      : null
-    : snapshot?.provinceSummary;
-  const areaSummary = normalizeProvinceSummary(summarySource);
+  const areaSummary = useMemo(() => {
+    const hasDistrictAggregateClasses =
+      Object.keys(districtAggregate?.byClass ?? {}).length > 0;
+    const summarySource = activeMapLayer
+      ? hasDistrictAggregateClasses
+        ? { byClass: districtAggregate.byClass }
+        : null
+      : snapshot?.provinceSummary;
+    return normalizeProvinceSummary(summarySource);
+  }, [activeMapLayer, districtAggregate, snapshot?.provinceSummary]);
   const summedTotalHa = areaSummary.reduce(
     (sum, item) => sum + (item.area_ha ?? 0),
     0,
@@ -1421,13 +1400,60 @@ export function ForestClassification() {
   }, [mapInstance, mapLayers]);
 
   useEffect(() => {
+    const visible =
+      mapInstance &&
+      snapshot &&
+      activeMapLayer?.visible &&
+      activeMapLayer.opacity > 0 &&
+      areaSummary.length > 0;
+    setForestClassificationLegend(
+      visible
+        ? {
+            name: "Phân bố diện tích",
+            subtitle: activeMapLayer.label,
+            entries: areaSummary
+              .slice()
+              .sort((a, b) => (b.area_ha ?? 0) - (a.area_ha ?? 0))
+              .map((cls) => {
+                const classId = cls.class_id;
+                const areaHa = cls.area_ha ?? 0;
+                const label =
+                  cls.class_name ?? CLASS_NAMES[classId] ?? `Lớp ${classId}`;
+                const percentage = totalHa > 0
+                  ? ((areaHa / totalHa) * 100).toFixed(1)
+                  : 0;
+                return {
+                  color: CLASS_PALETTE[classId] ?? "#ccc",
+                  label,
+                  description: CLASS_HELP[classId] || label,
+                  isForest: FOREST_CLASS_IDS.includes(classId),
+                  areaLabel: formatArea(areaHa),
+                  percentageLabel: `${percentage}%`,
+                };
+              }),
+            totalAreaLabel: formatArea(totalHa),
+            totalPercentageLabel: "100%",
+          }
+        : null,
+    );
+  }, [
+    mapInstance,
+    snapshot,
+    activeMapLayer,
+    areaSummary,
+    totalHa,
+    setForestClassificationLegend,
+  ]);
+
+  useEffect(() => {
     return () => {
+      setForestClassificationLegend(null);
       if (!mapInstance) return;
       for (const id of getForestRasterIds(mapInstance)) {
         removeForestRasterLayer(mapInstance, id);
       }
     };
-  }, [mapInstance]);
+  }, [mapInstance, setForestClassificationLegend]);
 
   return (
     <div className="@container/forest flex min-h-full min-w-0 flex-col gap-3 px-1 pb-3">
@@ -1763,59 +1789,6 @@ export function ForestClassification() {
 
       {comparison && (
         <ComparisonCard comparison={comparison} currentSnapshot={snapshot} />
-      )}
-
-      {/* Legend + area table */}
-      {areaSummary.length > 0 && (
-        <Card className="h-fit shrink-0 gap-3 py-3">
-          <CardHeader className="px-4">
-            <CardTitle className="flex min-w-0 items-center justify-between gap-2 text-sm">
-              <span className="flex min-w-0 items-center gap-1.5 truncate">
-                <BarChart3 className="h-4 w-4 shrink-0 text-primary" />
-                <span className="truncate">Phân bố diện tích</span>
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="space-y-1 px-3 py-2.5 @[360px]/forest:px-4">
-              {/* Header row */}
-              <div className="sticky top-0 z-10 grid grid-cols-[0.75rem_minmax(0,1fr)_4.75rem] items-center gap-2 border-b border-border bg-card/95 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur @[340px]/forest:grid-cols-[0.75rem_minmax(0,1fr)_2.5rem_5rem]">
-                <span className="h-3 w-3 shrink-0" />
-                <span className="truncate">Lớp phủ</span>
-                <span className="hidden text-right @[340px]/forest:block">
-                  %
-                </span>
-                <span className="text-right">Diện tích</span>
-              </div>
-              {areaSummary
-                .slice()
-                .sort((a, b) => (b.area_ha ?? 0) - (a.area_ha ?? 0))
-                .map((cls) => (
-                  <ClassRow
-                    key={cls.class_id}
-                    classId={cls.class_id}
-                    name={
-                      cls.class_name ??
-                      CLASS_NAMES[cls.class_id] ??
-                      `Lớp ${cls.class_id}`
-                    }
-                    areaHa={cls.area_ha ?? 0}
-                    totalHa={totalHa}
-                  />
-                ))}
-              <div className="mt-2 grid grid-cols-[0.75rem_minmax(0,1fr)_4.75rem] items-center gap-2 border-t border-border pt-2 text-xs font-semibold text-foreground @[340px]/forest:grid-cols-[0.75rem_minmax(0,1fr)_2.5rem_5rem]">
-                <span className="h-3 w-3 shrink-0" />
-                <span className="truncate">Tổng cộng</span>
-                <span className="hidden text-right tabular-nums @[340px]/forest:block">
-                  100%
-                </span>
-                <span className="text-right tabular-nums">
-                  {formatArea(totalHa)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* Empty state */}

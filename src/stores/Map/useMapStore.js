@@ -11,6 +11,11 @@ export const useMapStore = create((set, get) => ({
   ogcLayersData: {},
   // Time-series raster layers: { [groupCode]: { group, step, tileUrl } }
   timeSeriesLayersData: {},
+  fireRiskLegend: null,
+  setFireRiskLegend: (fireRiskLegend) => set({ fireRiskLegend }),
+  forestClassificationLegend: null,
+  setForestClassificationLegend: (forestClassificationLegend) =>
+    set({ forestClassificationLegend }),
   // Trạng thái điều khiển panel Ảnh theo thời gian — giữ qua chuyển tab:
   // { [groupCode]: { stepIndex, isPlaying, intervalMs } }
   timeSeriesPanelState: {},

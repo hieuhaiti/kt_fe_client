@@ -736,7 +736,7 @@ function toPublishedMapLayer(item, districtPayload) {
     id: normalized.id,
     geoserverLayers: readiness.geoserverLayers,
     tileUrl,
-    label: `Phân loại rừng ${String(normalized.month).padStart(2, "0")}/${normalized.year}`,
+    label: `Phân loại lớp phủ ${String(normalized.month).padStart(2, "0")}/${normalized.year}`,
     visible: true,
     opacity: 0.75,
     readyCount: readiness.ready,
@@ -755,7 +755,7 @@ function ensureForestRasterLayer(map, item) {
       type: "raster",
       tiles: [item.tileUrl],
       tileSize: 256,
-      attribution: "Dữ liệu phân loại lớp phủ rừng",
+      attribution: "Dữ liệu phân loại lớp phủ",
     });
   } else if (typeof source.setTiles === "function") {
     source.setTiles([item.tileUrl]);
@@ -1061,7 +1061,7 @@ export function ForestClassification() {
         }
       }
     } catch (err) {
-      setError(err?.message || "Không thể tải dữ liệu phân loại rừng.");
+      setError(err?.message || "Không thể tải dữ liệu phân loại lớp phủ.");
     } finally {
       setLoading(false);
     }
@@ -1436,7 +1436,7 @@ export function ForestClassification() {
           <div className="flex min-w-0 items-center gap-2">
             <TreePine className="h-5 w-5 shrink-0 text-success" />
             <h2 className="truncate text-base font-semibold text-foreground @[360px]/forest:text-lg">
-              Phân loại lớp phủ rừng
+              Phân loại lớp phủ
             </h2>
           </div>
           <Button
@@ -1449,7 +1449,7 @@ export function ForestClassification() {
             }}
             disabled={loading || querying}
             title="Cập nhật dữ liệu"
-            aria-label="Cập nhật dữ liệu phân loại rừng"
+            aria-label="Cập nhật dữ liệu phân loại lớp phủ"
           >
             <RefreshCw
               className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}

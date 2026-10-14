@@ -29,7 +29,7 @@ const CATEGORY_LABELS_VI = {
   land_cover: "Lớp phủ mặt đất",
   remote_sensing: "Ảnh viễn thám",
   fire_risk_district: "Nguy cơ cháy rừng theo huyện",
-  forest_district: "Phân loại rừng theo huyện",
+  forest_district: "Phân loại lớp phủ",
   administrative: "Ranh giới hành chính",
   hydrology: "Thủy văn",
   transportation: "Giao thông",

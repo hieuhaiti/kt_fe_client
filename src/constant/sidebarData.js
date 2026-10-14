@@ -26,7 +26,7 @@ export const trackMapping = [
   {
     id: "forestClassification",
     icon: TreePine,
-    label: "Phân loại rừng",
+    label: "Phân loại lớp phủ",
     description: "11 lớp hiện trạng rừng Kon Tum từ viễn thám",
     component: ForestClassification,
     color: "text-[#0F5132]",

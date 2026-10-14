@@ -90,6 +90,9 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
+          aria-label={props["aria-label"]}
+          aria-labelledby={props["aria-labelledby"]}
+          aria-valuetext={props["aria-valuetext"]}
           className={cn(
             "block size-4 shrink-0 rounded-full border bg-background shadow-sm outline-none transition-[color,box-shadow] hover:ring-4 hover:ring-ring/50 focus-visible:ring-4 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
             sliderThumbVariants[variant] ?? sliderThumbVariants.default,

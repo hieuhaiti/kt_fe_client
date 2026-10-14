@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Tooltip,
@@ -1139,7 +1140,7 @@ export function MonitoringAndAlerting() {
     heat: true,
   });
   const [districtOpacity, setDistrictOpacity] = useState(0.45);
-  const [heatOpacity, setHeatOpacity] = useState(0.7);
+  const [heatOpacity, setHeatOpacity] = useState(0.65);
 
   const requestAbortRef = useRef(null);
   const pollAbortRef = useRef(null);
@@ -1398,7 +1399,7 @@ export function MonitoringAndAlerting() {
       // Hiển thị ngay mảng layer từ published-history. Request district chỉ
       // dùng để xác thực/làm mới; nếu route lỗi thì WMS history vẫn được giữ.
       setHistoryLayers({
-        [id]: { visible: true, opacity: 0.7 },
+        [id]: { visible: true, opacity: 0.65 },
       });
       setLayerVisible((current) => ({ ...current, heat: false }));
 
@@ -1539,16 +1540,19 @@ export function MonitoringAndAlerting() {
   // `layout.visibility=visible|none`. Toggle không nháy, không refetch tile.
   useEffect(() => {
     if (!mapInstance) return;
-    const hasRaster = Boolean(rasterTileUrl) || districtRasterTiles.length > 0;
-    forEachCurrentRasterLayer(mapInstance, (layerId) => {
-      setLayerVisibilityOnMap(
-        mapInstance,
-        layerId,
-        layerVisible.heat && hasRaster,
-      );
-    });
-    setLayerVisibilityOnMap(mapInstance, FIRE_DIST_FILL, layerVisible.district);
-    setLayerVisibilityOnMap(mapInstance, FIRE_DIST_LINE, layerVisible.district);
+    const apply = () => {
+      const hasRaster = Boolean(rasterTileUrl) || districtRasterTiles.length > 0;
+      forEachCurrentRasterLayer(mapInstance, (layerId) => {
+        setLayerVisibilityOnMap(
+          mapInstance,
+          layerId,
+          layerVisible.heat && hasRaster,
+        );
+      });
+      setLayerVisibilityOnMap(mapInstance, FIRE_DIST_FILL, layerVisible.district);
+      setLayerVisibilityOnMap(mapInstance, FIRE_DIST_LINE, layerVisible.district);
+    };
+    return runWhenStyleReady(mapInstance, apply);
   }, [
     districtRasterTiles.length,
     mapInstance,
@@ -1560,19 +1564,26 @@ export function MonitoringAndAlerting() {
   // Effect C — Raster opacity. Áp dụng cho lớp tỉnh hoặc toàn bộ lớp huyện.
   useEffect(() => {
     if (!mapInstance) return;
-    forEachCurrentRasterLayer(mapInstance, (layerId) => {
-      mapInstance.setPaintProperty(layerId, "raster-opacity", heatOpacity);
-    });
-  }, [districtRasterTiles.length, mapInstance, heatOpacity, rasterTileUrl]);
+    const apply = () => {
+      forEachCurrentRasterLayer(mapInstance, (layerId) => {
+        mapInstance.setPaintProperty(layerId, "raster-opacity", heatOpacity);
+      });
+    };
+    return runWhenStyleReady(mapInstance, apply);
+  }, [districtRasterTiles, mapInstance, heatOpacity, rasterTileUrl, view]);
 
   // Effect D — District opacity. Chỉ setPaint district fill.
   useEffect(() => {
-    if (!mapInstance || !mapInstance.getLayer(FIRE_DIST_FILL)) return;
-    mapInstance.setPaintProperty(
-      FIRE_DIST_FILL,
-      "fill-opacity",
-      districtOpacity,
-    );
+    if (!mapInstance) return;
+    const apply = () => {
+      if (!mapInstance.getLayer(FIRE_DIST_FILL)) return;
+      mapInstance.setPaintProperty(
+        FIRE_DIST_FILL,
+        "fill-opacity",
+        districtOpacity,
+      );
+    };
+    return runWhenStyleReady(mapInstance, apply);
   }, [mapInstance, districtOpacity, view]);
 
   // Effect E — History overlays. Sync `historyLayers` state → map layers.
@@ -1659,6 +1670,7 @@ export function MonitoringAndAlerting() {
                 loadPublishedHistory();
               }}
               disabled={loading}
+              aria-label="Cập nhật dữ liệu cảnh báo cháy rừng"
             >
               <RefreshCw
                 className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
@@ -1714,6 +1726,112 @@ export function MonitoringAndAlerting() {
               </p>
             )}
 
+            {/* Layer manager — raster hiện tại, ranh giới khi có geometry và các
+                overlay lịch sử. */}
+            <FireRiskLayerManager
+              hasDistrictGeometry={
+                view.districtFeatureCollection?.features?.length > 0
+              }
+              geeDownloadUrl={
+                rasterSource === "province" ? view.geeDownloadUrl : null
+              }
+              geeDownloadFilename={view.geeDownloadFilename}
+              districtRasterReadiness={districtRasterReadiness}
+              layerVisible={layerVisible}
+              onLayerToggle={(id) =>
+                setLayerVisible((s) => ({ ...s, [id]: !s[id] }))
+              }
+              districtOpacity={districtOpacity}
+              heatOpacity={heatOpacity}
+              onDistrictOpacityChange={setDistrictOpacity}
+              onHeatOpacityChange={setHeatOpacity}
+              historyRows={Object.entries(historyLayers)
+                .map(([id, cfg]) => {
+                  const item = historyItems.find((h) => h.id === id);
+                  if (!item) return null;
+                  return {
+                    id,
+                    geoserverLayers: item.geoserverLayers,
+                    readyCount:
+                      item.geoserverLayerCount ??
+                      item.geoserverLayers?.length ??
+                      0,
+                    totalDistricts:
+                      item.totalDistricts ??
+                      item.total_districts ??
+                      item.geoserverLayers?.length ??
+                      0,
+                    dateStr: formatFireAnalysisDate(item.analysisDate) || id,
+                    visible: cfg.visible !== false,
+                    opacity: cfg.opacity ?? 0.6,
+                  };
+                })
+                .filter(Boolean)}
+              onHistoryToggle={(id) =>
+                setHistoryLayers((s) =>
+                  s[id]
+                    ? {
+                        ...s,
+                        [id]: { ...s[id], visible: !(s[id].visible !== false) },
+                      }
+                    : s,
+                )
+              }
+              onHistoryOpacityChange={(id, opacity) =>
+                setHistoryLayers((s) =>
+                  s[id] ? { ...s, [id]: { ...s[id], opacity } } : s,
+                )
+              }
+              onHistoryRemove={(id) => {
+                setHistoryLayers((s) => {
+                  const { [id]: _, ...rest } = s;
+                  return rest;
+                });
+                setLayerVisible((current) => ({
+                  ...current,
+                  heat: true,
+                }));
+              }}
+              onResetDefaults={() => {
+                setLayerVisible({ district: true, heat: true });
+                setDistrictOpacity(0.45);
+                setHeatOpacity(0.65);
+                setHistoryLayers({});
+                historySelectionAbortRef.current?.abort();
+              }}
+            />
+
+            {/* History browser đã move lên trên (ngang "Nguồn dữ liệu và cách tính"). */}
+
+            {/* Chú giải cấp — 1 cột khi hẹp, 2 cột khi rộng */}
+            <div className="rounded-lg border border-border bg-card/40 p-3">
+              <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
+                Chú giải nguy cơ cháy rừng
+              </p>
+              <div className="grid grid-cols-1 gap-1.5 @[380px]/fire:grid-cols-2">
+                {[1, 2, 3, 4, 5].map((l) => {
+                  const meta = getRiskMeta(l);
+                  return (
+                    <div
+                      key={l}
+                      className="flex items-center gap-2 text-[11px]"
+                    >
+                      <span
+                        className="inline-block h-3 w-3 shrink-0 rounded-sm"
+                        style={{ backgroundColor: meta.color }}
+                      />
+                      <span className="truncate">{meta.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
+                <ThermometerSun className="h-3 w-3 shrink-0" />
+                <span>
+                  Khu vực không hiển thị: chưa đủ dữ liệu ảnh trong 30 ngày.
+                </span>
+              </div>
+            </div>
             {/* KPI — 1 cột khi hẹp, 2 cột từ 280px */}
             <div className="grid grid-cols-1 gap-2 @[280px]/fire:grid-cols-2">
               <KpiCard
@@ -1859,112 +1977,6 @@ export function MonitoringAndAlerting() {
               </Card>
             )}
 
-            {/* Layer manager — raster hiện tại, ranh giới khi có geometry và các
-                overlay lịch sử. */}
-            <FireRiskLayerManager
-              hasDistrictGeometry={
-                view.districtFeatureCollection?.features?.length > 0
-              }
-              geeDownloadUrl={
-                rasterSource === "province" ? view.geeDownloadUrl : null
-              }
-              geeDownloadFilename={view.geeDownloadFilename}
-              districtRasterReadiness={districtRasterReadiness}
-              layerVisible={layerVisible}
-              onLayerToggle={(id) =>
-                setLayerVisible((s) => ({ ...s, [id]: !s[id] }))
-              }
-              districtOpacity={districtOpacity}
-              heatOpacity={heatOpacity}
-              onDistrictOpacityChange={setDistrictOpacity}
-              onHeatOpacityChange={setHeatOpacity}
-              historyRows={Object.entries(historyLayers)
-                .map(([id, cfg]) => {
-                  const item = historyItems.find((h) => h.id === id);
-                  if (!item) return null;
-                  return {
-                    id,
-                    geoserverLayers: item.geoserverLayers,
-                    readyCount:
-                      item.geoserverLayerCount ??
-                      item.geoserverLayers?.length ??
-                      0,
-                    totalDistricts:
-                      item.totalDistricts ??
-                      item.total_districts ??
-                      item.geoserverLayers?.length ??
-                      0,
-                    dateStr: formatFireAnalysisDate(item.analysisDate) || id,
-                    visible: cfg.visible !== false,
-                    opacity: cfg.opacity ?? 0.6,
-                  };
-                })
-                .filter(Boolean)}
-              onHistoryToggle={(id) =>
-                setHistoryLayers((s) =>
-                  s[id]
-                    ? {
-                        ...s,
-                        [id]: { ...s[id], visible: !(s[id].visible !== false) },
-                      }
-                    : s,
-                )
-              }
-              onHistoryOpacityChange={(id, opacity) =>
-                setHistoryLayers((s) =>
-                  s[id] ? { ...s, [id]: { ...s[id], opacity } } : s,
-                )
-              }
-              onHistoryRemove={(id) => {
-                setHistoryLayers((s) => {
-                  const { [id]: _, ...rest } = s;
-                  return rest;
-                });
-                setLayerVisible((current) => ({
-                  ...current,
-                  heat: true,
-                }));
-              }}
-              onResetDefaults={() => {
-                setLayerVisible({ district: true, heat: true });
-                setDistrictOpacity(0.45);
-                setHeatOpacity(0.7);
-                setHistoryLayers({});
-                historySelectionAbortRef.current?.abort();
-              }}
-            />
-
-            {/* History browser đã move lên trên (ngang "Nguồn dữ liệu và cách tính"). */}
-
-            {/* Chú giải cấp — 1 cột khi hẹp, 2 cột khi rộng */}
-            <div className="rounded-lg border border-border bg-card/40 p-3">
-              <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
-                Chú giải nguy cơ cháy rừng
-              </p>
-              <div className="grid grid-cols-1 gap-1.5 @[380px]/fire:grid-cols-2">
-                {[1, 2, 3, 4, 5].map((l) => {
-                  const meta = getRiskMeta(l);
-                  return (
-                    <div
-                      key={l}
-                      className="flex items-center gap-2 text-[11px]"
-                    >
-                      <span
-                        className="inline-block h-3 w-3 shrink-0 rounded-sm"
-                        style={{ backgroundColor: meta.color }}
-                      />
-                      <span className="truncate">{meta.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-                <ThermometerSun className="h-3 w-3 shrink-0" />
-                <span>
-                  Khu vực không hiển thị: chưa đủ dữ liệu ảnh trong 30 ngày.
-                </span>
-              </div>
-            </div>
           </>
         )}
 
@@ -2029,7 +2041,8 @@ function FireRiskLayerManager({
       id: "heat",
       label: "Vùng nguy cơ cháy rừng",
       description: districtProgress,
-      dot: "bg-orange-500",
+      dot: "bg-warning",
+      riskRamp: true,
       visible: layerVisible.heat,
       opacity: heatOpacity,
       onToggle: () => onLayerToggle("heat"),
@@ -2105,7 +2118,15 @@ function FireRiskLayerRow({ row }) {
       className={`rounded border border-border/60 bg-background/40 p-1.5 transition-opacity ${row.visible ? "" : "opacity-60"}`}
     >
       <div className="flex items-center gap-1.5">
-        <div className={`h-2 w-2 shrink-0 rounded-full ${row.dot}`} />
+        {row.riskRamp ? (
+          <span aria-hidden="true" className="flex h-3 w-8 shrink-0 overflow-hidden rounded-sm ring-1 ring-border">
+            {Object.values(RISK_LEVELS).map((level) => (
+              <span key={level.label} className="flex-1" style={{ backgroundColor: level.color }} />
+            ))}
+          </span>
+        ) : (
+          <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${row.dot}`} />
+        )}
         {/* Sidebar hẹp thường truncate tên; hover hiện đầy đủ nhãn lớp. */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -2124,7 +2145,10 @@ function FireRiskLayerRow({ row }) {
           type="button"
           variant="ghost"
           size="icon-xs"
+          id={`fire-risk-toggle-${row.id}`}
           onClick={row.onToggle}
+          aria-label={`${row.visible ? "Ẩn" : "Hiện"} lớp ${row.label}`}
+          aria-pressed={row.visible}
           title={row.visible ? "Ẩn" : "Hiện"}
         >
           {row.visible ? (
@@ -2176,15 +2200,27 @@ function FireRiskLayerRow({ row }) {
           </Button>
         )}
       </div>
-      <input
-        type="range"
+      {row.description && (
+        <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          {row.description}
+        </p>
+      )}
+      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span id={`fire-risk-opacity-label-${row.id}`}>Mức hiển thị</span>
+        <span className="font-medium tabular-nums text-foreground">
+          {Math.round(row.opacity * 100)}%
+        </span>
+      </div>
+      <Slider
+        id={`fire-risk-opacity-${row.id}`}
         min={0}
         max={1}
         step={0.05}
-        value={row.opacity}
-        onChange={(e) => row.onOpacityChange(Number(e.target.value))}
-        className="mt-1 block w-full accent-primary"
-        title={`Độ trong suốt: ${Math.round(row.opacity * 100)}%`}
+        value={[row.opacity]}
+        onValueChange={([value]) => row.onOpacityChange(value)}
+        className="min-h-6 w-full"
+        aria-label={`Mức hiển thị lớp ${row.label}`}
+        aria-valuetext={`${Math.round(row.opacity * 100)}%`}
       />
     </div>
   );

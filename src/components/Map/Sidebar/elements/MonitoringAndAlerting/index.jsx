@@ -35,10 +35,7 @@ import {
   getFireRiskDistrictExports,
 } from "@/features/map/api/fireRiskApi";
 import { GEOSERVER_LAYER_ORDER_PRIORITY } from "@/constant/geoserverData";
-import {
-  getDataLayerBeforeId,
-  getRasterLayerBeforeId,
-} from "@/helper/Map/MapHelper";
+import { getRasterLayerBeforeId } from "@/helper/Map/MapHelper";
 import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +47,7 @@ import { buildWmsTileUrl } from "@/helper/Map/geoserver/wms";
 //   - snapshot.districtStats[] { name, unitCode, s2Coverage, riskLevelDist{1..5} }
 //   - snapshot.geoserverLayer (string|null) — layer name để build WMS tile,
 //     null khi raster chưa publish xong.
-//   - features[]: geometry có thể rỗng; UI chỉ bật lớp ranh giới khi có tọa độ.
+//   - features[]: geometry dùng để chuẩn hoá vị trí; Client không tô cảnh báo theo huyện.
 //
 // UI:
 //   - WMS tile GeoServer làm nền (khi geoserverLayer sẵn sàng)
@@ -932,67 +929,11 @@ function forEachCurrentRasterLayer(map, callback) {
   for (const layerId of districtLayerIds) callback(layerId);
 }
 
-function ensureDistrictLayer(map, featureCollection) {
-  if (!featureCollection?.features?.length) {
-    [FIRE_DIST_LINE, FIRE_DIST_FILL].forEach((id) => {
-      if (map.getLayer(id)) map.removeLayer(id);
-    });
-    if (map.getSource(FIRE_SOURCE_DIST)) map.removeSource(FIRE_SOURCE_DIST);
-    return;
-  }
-  const src = map.getSource(FIRE_SOURCE_DIST);
-  if (src) {
-    src.setData(featureCollection);
-  } else {
-    map.addSource(FIRE_SOURCE_DIST, {
-      type: "geojson",
-      data: featureCollection,
-    });
-  }
-  if (!map.getLayer(FIRE_DIST_FILL)) {
-    map.addLayer(
-      {
-        id: FIRE_DIST_FILL,
-        type: "fill",
-        source: FIRE_SOURCE_DIST,
-        metadata: {
-          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.POLYGON,
-          ktGeometryType: "polygon",
-          ktManagedOverlay: true,
-        },
-        paint: {
-          "fill-color": ["get", "color"],
-          // opacity set qua setPaintProperty riêng (effect opacity).
-        },
-      },
-      getDataLayerBeforeId(map, "polygon", FIRE_DIST_FILL),
-    );
-  } else {
-    const beforeId = getDataLayerBeforeId(map, "polygon", FIRE_DIST_FILL);
-    if (beforeId) map.moveLayer(FIRE_DIST_FILL, beforeId);
-  }
-  if (!map.getLayer(FIRE_DIST_LINE)) {
-    map.addLayer(
-      {
-        id: FIRE_DIST_LINE,
-        type: "line",
-        source: FIRE_SOURCE_DIST,
-        metadata: {
-          ktGeometryPriority: GEOSERVER_LAYER_ORDER_PRIORITY.LINE,
-          ktGeometryType: "line",
-          ktManagedOverlay: true,
-        },
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 1.8,
-        },
-      },
-      getDataLayerBeforeId(map, "line", FIRE_DIST_LINE),
-    );
-  } else {
-    const beforeId = getDataLayerBeforeId(map, "line", FIRE_DIST_LINE);
-    if (beforeId) map.moveLayer(FIRE_DIST_LINE, beforeId);
-  }
+function removeDistrictWarningLayers(map) {
+  [FIRE_DIST_LINE, FIRE_DIST_FILL].forEach((id) => {
+    if (map.getLayer(id)) map.removeLayer(id);
+  });
+  if (map.getSource(FIRE_SOURCE_DIST)) map.removeSource(FIRE_SOURCE_DIST);
 }
 
 // Set visibility bằng `layout.visibility` — maplibre khuyến nghị vì thao tác
@@ -1135,11 +1076,7 @@ export function MonitoringAndAlerting() {
   //   của ngày được chọn. Mỗi lần chọn ngày mới sẽ thay ngày trước.
   const [historyItems, setHistoryItems] = useState([]);
   const [historyLayers, setHistoryLayers] = useState({});
-  const [layerVisible, setLayerVisible] = useState({
-    district: true,
-    heat: true,
-  });
-  const [districtOpacity, setDistrictOpacity] = useState(0.45);
+  const [layerVisible, setLayerVisible] = useState({ heat: true });
   const [heatOpacity, setHeatOpacity] = useState(0.65);
 
   const requestAbortRef = useRef(null);
@@ -1504,14 +1441,14 @@ export function MonitoringAndAlerting() {
     ? historyItems.find((item) => item.id === selectedHistoryId)
     : null;
 
-  // ── Map sync — 4 effect tách biệt để KHÔNG NHÁY khi toggle/kéo slider ────
+  // ── Map sync — effect tách biệt để KHÔNG NHÁY khi toggle/kéo slider ────
   //
   // Bí quyết (giống satellite [LayerManager] → LayerControl):
   //   - Effect A (data lifecycle): add/update source + layer khi dữ liệu đổi.
   //     KHÔNG phụ thuộc visibility → toggle visibility không tear-down.
   //   - Effect B (visibility): dùng `setLayoutProperty` — thao tác nhẹ, không
   //     tạo/xoá layer, không refetch tile.
-  //   - Effect C/D (opacity): chỉ `setPaintProperty` — chỉ paint prop đổi,
+  //   - Effect C (opacity): chỉ `setPaintProperty` — chỉ paint prop đổi,
   //     source + layer nguyên vẹn.
   //   - Cleanup thực sự CHỈ khi unmount (effect riêng deps=[]) — hết flicker
   //     do cleanup của Effect A chạy trên mỗi visibility change.
@@ -1530,7 +1467,7 @@ export function MonitoringAndAlerting() {
         if (rasterTileUrl) ensureRasterLayer(mapInstance, rasterTileUrl);
         else removeProvinceRasterLayer(mapInstance);
       }
-      ensureDistrictLayer(mapInstance, view.districtFeatureCollection);
+      removeDistrictWarningLayers(mapInstance);
     };
 
     return runWhenStyleReady(mapInstance, setup);
@@ -1549,8 +1486,6 @@ export function MonitoringAndAlerting() {
           layerVisible.heat && hasRaster,
         );
       });
-      setLayerVisibilityOnMap(mapInstance, FIRE_DIST_FILL, layerVisible.district);
-      setLayerVisibilityOnMap(mapInstance, FIRE_DIST_LINE, layerVisible.district);
     };
     return runWhenStyleReady(mapInstance, apply);
   }, [
@@ -1571,20 +1506,6 @@ export function MonitoringAndAlerting() {
     };
     return runWhenStyleReady(mapInstance, apply);
   }, [districtRasterTiles, mapInstance, heatOpacity, rasterTileUrl, view]);
-
-  // Effect D — District opacity. Chỉ setPaint district fill.
-  useEffect(() => {
-    if (!mapInstance) return;
-    const apply = () => {
-      if (!mapInstance.getLayer(FIRE_DIST_FILL)) return;
-      mapInstance.setPaintProperty(
-        FIRE_DIST_FILL,
-        "fill-opacity",
-        districtOpacity,
-      );
-    };
-    return runWhenStyleReady(mapInstance, apply);
-  }, [mapInstance, districtOpacity, view]);
 
   // Effect E — History overlays. Sync `historyLayers` state → map layers.
   // Add cho id mới, remove cho id vừa bị xoá, update paint cho id đã có.
@@ -1726,12 +1647,8 @@ export function MonitoringAndAlerting() {
               </p>
             )}
 
-            {/* Layer manager — raster hiện tại, ranh giới khi có geometry và các
-                overlay lịch sử. */}
+            {/* Layer manager — raster hiện tại và các overlay lịch sử. */}
             <FireRiskLayerManager
-              hasDistrictGeometry={
-                view.districtFeatureCollection?.features?.length > 0
-              }
               geeDownloadUrl={
                 rasterSource === "province" ? view.geeDownloadUrl : null
               }
@@ -1741,9 +1658,7 @@ export function MonitoringAndAlerting() {
               onLayerToggle={(id) =>
                 setLayerVisible((s) => ({ ...s, [id]: !s[id] }))
               }
-              districtOpacity={districtOpacity}
               heatOpacity={heatOpacity}
-              onDistrictOpacityChange={setDistrictOpacity}
               onHeatOpacityChange={setHeatOpacity}
               historyRows={Object.entries(historyLayers)
                 .map(([id, cfg]) => {
@@ -1793,8 +1708,7 @@ export function MonitoringAndAlerting() {
                 }));
               }}
               onResetDefaults={() => {
-                setLayerVisible({ district: true, heat: true });
-                setDistrictOpacity(0.45);
+                setLayerVisible({ heat: true });
                 setHeatOpacity(0.65);
                 setHistoryLayers({});
                 historySelectionAbortRef.current?.abort();
@@ -1992,19 +1906,15 @@ export function MonitoringAndAlerting() {
 }
 
 /**
- * Layer manager tối giản: raster nguy cơ hiện tại, ranh giới khi có geometry và
- * các raster lịch sử đã công bố.
+ * Layer manager tối giản: raster nguy cơ hiện tại và các raster lịch sử đã công bố.
  */
 function FireRiskLayerManager({
-  hasDistrictGeometry,
   geeDownloadUrl,
   geeDownloadFilename,
   districtRasterReadiness,
   layerVisible,
   onLayerToggle,
-  districtOpacity,
   heatOpacity,
-  onDistrictOpacityChange,
   onHeatOpacityChange,
   historyRows = [],
   onHistoryToggle,
@@ -2019,24 +1929,7 @@ function FireRiskLayerManager({
       ? `${readyCount}/${totalDistricts} huyện đã có ảnh chi tiết`
       : null;
 
-  // Ranh giới chỉ xuất hiện khi API thực sự trả geometry có tọa độ. Raster
-  // nguy cơ và các lớp lịch sử vẫn hoạt động độc lập.
   const baseRows = [
-    ...(hasDistrictGeometry
-      ? [
-          {
-            id: "district",
-            label: "Cảnh báo theo huyện",
-            dot: "bg-primary",
-            visible: layerVisible.district,
-            opacity: districtOpacity,
-            onToggle: () => onLayerToggle("district"),
-            onOpacityChange: onDistrictOpacityChange,
-            rasterUrl: null,
-            downloadFilename: null,
-          },
-        ]
-      : []),
     {
       id: "heat",
       label: "Vùng nguy cơ cháy rừng",

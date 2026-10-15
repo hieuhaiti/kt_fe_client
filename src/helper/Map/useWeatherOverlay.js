@@ -230,7 +230,7 @@ export const useWeatherOverlay = (mapRef, canvasRef) => {
   const getLocalWind = (screenX, screenY) => {
     const map = getMap();
     const grid = windGridRef.current;
-    if (!map || !grid.length) return { u: 0, v: 0, speed: 0 };
+    if (!map || !grid.length) return null;
 
     const lngLat = map.unproject([screenX, screenY]);
 
@@ -240,6 +240,7 @@ export const useWeatherOverlay = (mapRef, canvasRef) => {
     let sumSpeed = 0;
 
     for (const g of grid) {
+      if (![g.lng ?? g.lon, g.lat, g.u, g.v, g.speed].every(Number.isFinite)) continue;
       const dLon = lngLat.lng - (g.lng ?? g.lon);
       const dLat = lngLat.lat - g.lat;
       const dist2 = dLon * dLon + dLat * dLat + 0.00001;
@@ -247,9 +248,9 @@ export const useWeatherOverlay = (mapRef, canvasRef) => {
 
       // wind_direction_10m của Open-Meteo là hướng gió THỔI TỪ.
       // Streamline cần hướng gió THỔI ĐẾN nên +180 độ.
-      const u = Number(g.u || 0);
-      const v = Number(g.v || 0);
-      const speed = Number(g.speed || 0);
+      const u = g.u;
+      const v = g.v;
+      const speed = g.speed;
 
       sumU += u * weight;
       sumV += v * weight;
@@ -257,6 +258,7 @@ export const useWeatherOverlay = (mapRef, canvasRef) => {
       sumW += weight;
     }
 
+    if (!sumW) return null;
     return { u: sumU / sumW, v: sumV / sumW, speed: sumSpeed / sumW };
   };
 
@@ -305,6 +307,7 @@ export const useWeatherOverlay = (mapRef, canvasRef) => {
 
     for (const p of particlesRef.current) {
       const w = getLocalWind(p.x, p.y);
+      if (!w) continue;
       const mag = Math.sqrt(w.u * w.u + w.v * w.v) || 1;
       const dx = w.u / mag;
       const dy = w.v / mag;

@@ -102,7 +102,20 @@ function SatelliteLegendGroup({ layer, defaultOpen = true }) {
           ? "Kỳ tham chiếu · "
           : "";
 
-  const titleText = `${periodLabel}${config?.label || layer.layerType}`;
+  const resolveGroupTitle = () => {
+    const raw = config?.label;
+    const isSlug = !raw || /^(ndvi|lst|rgb|heatmap)[-_](null|zero|\d+)$/i.test(raw);
+    if (!isSlug) return raw;
+    const type = String(layer.layerType || "").toLowerCase();
+    if (type.includes("ndvi")) return "Chỉ số thực vật (NDVI)";
+    if (type.includes("lst") || type.includes("heatmap")) return "Nhiệt độ bề mặt (LST)";
+    if (type.includes("rgb")) return "Ảnh màu";
+    if (type.includes("change")) return "Biến động lớp phủ";
+    if (type.includes("classified")) return "Phân loại lớp phủ";
+    return layer.layerType || "Lớp ảnh vệ tinh";
+  };
+
+  const titleText = `${periodLabel}${resolveGroupTitle()}`;
 
   return (
     <div className="space-y-1.5">
@@ -428,7 +441,8 @@ export function SatelliteLegend() {
         size="sm"
         onClick={() => setIsHidden(false)}
         className="h-8 gap-1.5 px-3 rounded-lg bg-card/95 backdrop-blur-md border border-border shadow-md text-xs font-medium hover:bg-accent cursor-pointer transition-all active:scale-95"
-        title="Hiện chú giải bản đồ"
+        title={`Mở ${titleText.toLowerCase()}`}
+        aria-label={`Mở ${titleText.toLowerCase()}`}
       >
         <Map size={13} className="text-primary shrink-0" />
         <span className="truncate max-w-[120px]">{titleText}</span>

@@ -47,7 +47,7 @@ export const formatDateForInput = (date) => {
 };
 
 /**
- * Format a date string or Date as DD/MM/YY
+ * Format a date string or Date as DD/MM/YYYY
  * @param {Date|string} date
  * @returns {string}
  */
@@ -57,30 +57,30 @@ export const formatDateShort = (date) => {
   if (isNaN(d.getTime())) return String(date);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}/${mm}/${yy}`;
+  const yyyy = String(d.getFullYear());
+  return `${dd}/${mm}/${yyyy}`;
 };
 
 /**
- * Format a date range stored as "YYYY-MM-DD - YYYY-MM-DD" into "DD/MM/YY → DD/MM/YY"
+ * Format a date range stored as "YYYY-MM-DD - YYYY-MM-DD" into "DD/MM/YYYY – DD/MM/YYYY"
  * @param {string} dateRange  e.g. "2025-02-27 - 2026-02-27"
  * @returns {string}
  */
 export const formatDateRange = (dateRange) => {
   if (!dateRange) return "";
-  const parts = dateRange.split(" - ");
+  const parts = dateRange.split(/\s+[-–—→]\s+/);
   if (parts.length === 2) {
-    return `${formatDateShort(parts[0])} → ${formatDateShort(parts[1])}`;
+    return `${formatDateShort(parts[0])} – ${formatDateShort(parts[1])}`;
   }
   return dateRange;
 };
 
 /**
- * Format two dates as "DD/MM/YY → DD/MM/YY"
+ * Format two dates as "DD/MM/YYYY – DD/MM/YYYY"
  * @param {Date|string} start
  * @param {Date|string} end
  * @returns {string}
  */
 export const formatDateRangeFromDates = (start, end) => {
-  return `${formatDateShort(start)} → ${formatDateShort(end)}`;
+  return `${formatDateShort(start)} – ${formatDateShort(end)}`;
 };

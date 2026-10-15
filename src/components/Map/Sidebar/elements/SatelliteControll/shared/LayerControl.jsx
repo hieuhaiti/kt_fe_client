@@ -47,9 +47,27 @@ const toCompactDate = (d) => (d || "").replace(/\D/g, "").slice(0, 8);
 const parseDateRange = (s) => {
   const raw = (s || "").trim();
   if (!raw) return { from: "", to: "" };
-  // Tách theo dấu phân cách khoảng " - ", " – ", " — " (có khoảng trắng 2 bên)
-  const parts = raw.split(/\s+[-–—]\s+/);
+  // Tách theo dấu phân cách khoảng " - ", " – ", " — ", " → " (có khoảng trắng 2 bên)
+  const parts = raw.split(/\s+[-–—→]\s+/);
   return { from: parts[0] || "", to: parts[1] || "" };
+};
+
+/**
+ * Resolve user-facing layer title, guarding against raw internal slugs (e.g. ndvi-null)
+ */
+const resolveLayerTitle = (layer, config, index) => {
+  const label = config?.label;
+  const isInternalSlug =
+    !label || /^(ndvi|lst|rgb|heatmap)[-_](null|zero|\d+)$/i.test(label);
+  if (!isInternalSlug) return label;
+
+  const type = String(layer?.layerType || layer?.id || label || "").toLowerCase();
+  if (type.includes("ndvi")) return "Chỉ số thực vật (NDVI)";
+  if (type.includes("lst") || type.includes("heatmap")) return "Nhiệt độ bề mặt (LST)";
+  if (type.includes("rgb")) return "Ảnh màu";
+  if (type.includes("classified")) return "Phân loại lớp phủ";
+  if (type.includes("change")) return "Biến động lớp phủ";
+  return typeof index === "number" ? `Lớp ${index + 1}` : (layer?.name || "Lớp ảnh vệ tinh");
 };
 
 /** Build filename: Anh_Nhiet_20250227-20260227.tif */
@@ -59,7 +77,8 @@ const buildDownloadFilename = (
   extension = "tif",
   suffix = "",
 ) => {
-  const label = slugify(config?.label || layer.layerType) || "satellite";
+  const resolvedLabel = resolveLayerTitle(layer, config);
+  const label = slugify(resolvedLabel) || "satellite";
   const { from, to } = parseDateRange(layer.date);
   const f = toCompactDate(from);
   const t = toCompactDate(to);
@@ -104,25 +123,42 @@ const detectRasterExtension = async (blob) => {
 function StatsRows({ layerType, stats }) {
   if (!stats) return null;
   const rows = [];
+  const type = String(layerType || "").toLowerCase();
+  const isNdvi = type === "ndvi" || type.startsWith("ndvi");
+  const isHeatmap = type === "heatmap" || type === "lst" || type.startsWith("lst");
 
   if (stats.imageCount != null) {
-    rows.push({ label: "Số ảnh", value: `${stats.imageCount} ảnh` });
+    rows.push({
+      label: "Số lượng ảnh",
+      value: stats.imageCount > 0 ? `${stats.imageCount} ảnh` : "0 ảnh (không có ảnh khả dụng)",
+    });
   }
-  if (layerType === "ndvi") {
-    rows.push({ label: "Diện tích thực vật", value: stats.vegetationHa != null
-      ? `${stats.vegetationHa.toLocaleString("vi-VN")} ha`
-      : "Chưa có thống kê hợp lệ" });
-    if (stats.ndviThreshUsed != null)
+  if (isNdvi) {
+    rows.push({
+      label: "Diện tích thực vật",
+      value:
+        stats.vegetationHa != null
+          ? `${stats.vegetationHa.toLocaleString("vi-VN")} ha`
+          : "Chưa có dữ liệu thống kê",
+    });
+    if (stats.ndviThreshUsed != null) {
       rows.push({ label: "Ngưỡng NDVI", value: `> ${stats.ndviThreshUsed}` });
+    }
   }
-  if (layerType === "heatmap") {
-    rows.push({ label: "Nhiệt độ bề mặt trung bình", value: stats.lstMeanC != null
-      ? `${stats.lstMeanC.toFixed(2)} °C`
-      : "Chưa có thống kê hợp lệ" });
-    if (stats.lstMinC != null)
+  if (isHeatmap) {
+    rows.push({
+      label: "Nhiệt độ bề mặt trung bình",
+      value:
+        stats.lstMeanC != null
+          ? `${stats.lstMeanC.toFixed(2)} °C`
+          : "Chưa có dữ liệu nhiệt độ",
+    });
+    if (stats.lstMinC != null) {
       rows.push({ label: "Nhiệt độ bề mặt thấp nhất", value: `${stats.lstMinC.toFixed(2)} °C` });
-    if (stats.lstMaxC != null)
+    }
+    if (stats.lstMaxC != null) {
       rows.push({ label: "Nhiệt độ bề mặt cao nhất", value: `${stats.lstMaxC.toFixed(2)} °C` });
+    }
   }
   if (rows.length === 0) return null;
 
@@ -172,14 +208,14 @@ function LayerControl({
             {compact ? (
               /* Compare: just name, cloud cover moves to date row */
               <p className="text-xs font-medium text-foreground truncate">
-                {config?.label || layer.layerType}
+                {resolveLayerTitle(layer, config, index)}
               </p>
             ) : (
               /* Single: name + cloud cover badge inline, date below */
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-medium text-foreground truncate">
-                    {config?.label || `Lớp ${index + 1}`}
+                    {resolveLayerTitle(layer, config, index)}
                   </p>
                   {layer.cloudCover != null && (
                     <span className="inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-500 shrink-0">
@@ -244,7 +280,7 @@ function LayerControl({
               <TooltipContent className="text-xs">
                 {hasRasterDownload
                   ? "Tải ảnh GeoTIFF"
-                  : "Không có liên kết tải về"}
+                  : "Chưa có tệp GeoTIFF để tải về"}
               </TooltipContent>
             </Tooltip>
 
@@ -272,7 +308,7 @@ function LayerControl({
               <TooltipContent className="text-xs">
                 {hasVectorDownload
                   ? "Tải dữ liệu GeoJSON"
-                  : "Không có liên kết tải về"}
+                  : "Lớp này không hỗ trợ dữ liệu vector"}
               </TooltipContent>
             </Tooltip>
 
@@ -392,7 +428,7 @@ function LayerControl({
         {/* Opacity */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-foreground/60">Mức hiển thị</label>
+            <label className="text-xs text-foreground/60">Độ hiển thị</label>
             <span
               className={`text-xs font-medium px-1.5 py-0.5 rounded ${accentClass}`}
             >
@@ -417,9 +453,9 @@ function LayerControl({
               onClick={() => setStatsOpen((o) => !o)}
               className="flex items-center justify-between w-full text-left"
             >
-              <span className="flex items-center gap-1 text-[10px] font-semibold text-foreground/60 uppercase tracking-wide">
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-foreground/60 tracking-wide">
                 <BarChart2 size={10} />
-                Chỉ số
+                Thông số thống kê
               </span>
               {statsOpen ? (
                 <ChevronUp size={10} className="text-foreground/40" />

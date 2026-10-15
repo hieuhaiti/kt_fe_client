@@ -23,7 +23,7 @@ export const LAYER_CONFIG = {
     supportCompare: true,
   },
   heatmap: {
-    label: "Ảnh nhiệt",
+    label: "Nhiệt độ bề mặt (LST)",
     color: "bg-purple-500",
     service: getHeatmap,
     description: "Nhiệt độ bề mặt (LST)",

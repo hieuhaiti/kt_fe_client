@@ -109,14 +109,16 @@ function StatsRows({ layerType, stats }) {
     rows.push({ label: "Số ảnh", value: `${stats.imageCount} ảnh` });
   }
   if (layerType === "ndvi") {
-    if (stats.vegetationHa != null)
-      rows.push({ label: "Diện tích thực vật", value: `${stats.vegetationHa.toLocaleString("vi-VN")} ha` });
+    rows.push({ label: "Diện tích thực vật", value: stats.vegetationHa != null
+      ? `${stats.vegetationHa.toLocaleString("vi-VN")} ha`
+      : "Chưa có thống kê hợp lệ" });
     if (stats.ndviThreshUsed != null)
-      rows.push({ label: "Ngưỡng NDVI", value: `≥ ${stats.ndviThreshUsed}` });
+      rows.push({ label: "Ngưỡng NDVI", value: `> ${stats.ndviThreshUsed}` });
   }
   if (layerType === "heatmap") {
-    if (stats.lstMeanC != null)
-      rows.push({ label: "Nhiệt độ bề mặt trung bình", value: `${stats.lstMeanC.toFixed(2)} °C` });
+    rows.push({ label: "Nhiệt độ bề mặt trung bình", value: stats.lstMeanC != null
+      ? `${stats.lstMeanC.toFixed(2)} °C`
+      : "Chưa có thống kê hợp lệ" });
     if (stats.lstMinC != null)
       rows.push({ label: "Nhiệt độ bề mặt thấp nhất", value: `${stats.lstMinC.toFixed(2)} °C` });
     if (stats.lstMaxC != null)

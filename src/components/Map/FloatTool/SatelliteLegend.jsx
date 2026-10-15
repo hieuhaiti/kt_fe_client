@@ -21,21 +21,18 @@ const formatDisplayName = (name, maxLength = 70) => {
 /** Static fallback items when server provides no data */
 const FALLBACK_LEGENDS = {
   ndvi: [
-    { label: "< 0", color: "#8B0000" },
-    { label: "0–0.1", color: "#FF0000" },
-    { label: "0.1–0.2", color: "#FFA500" },
-    { label: "0.2–0.3", color: "#FFFF00" },
-    { label: "0.3–0.45", color: "#ADFF2F" },
-    { label: "0.45–0.6", color: "#00FF00" },
-    { label: "> 0.6", color: "#006400" },
+    { label: "NDVI −0.2", color: "#d73027" },
+    { label: "NDVI 0.05", color: "#fee08b" },
+    { label: "NDVI 0.3", color: "#ffffbf" },
+    { label: "NDVI 0.55", color: "#90ee90" },
+    { label: "NDVI 0.8", color: "#1a9641" },
   ],
   heatmap: [
-    { label: "Rất mát (nước, rừng dày)", color: "#313695" },
-    { label: "Mát (20–25°C)", color: "#74add1" },
-    { label: "Trung bình (25–30°C)", color: "#e0f3f8" },
-    { label: "Ấm (thực vật thưa)", color: "#fee090" },
-    { label: "Nóng (đất trống, đô thị)", color: "#f46d43" },
-    { label: "Rất nóng (mặt đường, mái tôn)", color: "#a50026" },
+    { label: "20°C", color: "#313695" },
+    { label: "26.25°C", color: "#74add1" },
+    { label: "32.5°C", color: "#fed976" },
+    { label: "38.75°C", color: "#fd8d3c" },
+    { label: "45°C", color: "#d73027" },
   ],
   classified: [
     { label: "Đất khác", color: "#FFBEE8" },

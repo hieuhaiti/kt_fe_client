@@ -37,6 +37,7 @@ const CATEGORY_LABELS_VI = {
   environment: "Môi trường",
   agriculture: "Nông nghiệp",
   forestry: "Lâm nghiệp",
+  other: "Khác",
 };
 
 const toCategoryLabel = (key) => {
